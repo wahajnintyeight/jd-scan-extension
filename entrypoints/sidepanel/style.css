@@ -1,0 +1,127 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    * {
+        border-color: theme('colors.slate.200');
+    }
+
+    body {
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        background-color: theme('colors.slate.50');
+        color: theme('colors.slate.900');
+    }
+
+    .font-display {
+        font-family: 'Outfit', sans-serif;
+    }
+}
+
+@layer components {
+    .glass-card {
+        @apply bg-white/70 backdrop-blur-md border border-white/20 shadow-premium rounded-2xl transition-all duration-300;
+    }
+
+    .glass-card-hover {
+        @apply hover:shadow-premium-hover hover:-translate-y-0.5;
+    }
+
+    .btn-primary {
+        @apply px-4 py-3 bg-gradient-to-r from-brand-600 to-brand-700 hover:from-brand-700 hover:to-brand-800 text-white font-semibold rounded-xl transition-all duration-300 shadow-md hover:shadow-lg active:scale-[0.98] disabled:from-gray-300 disabled:to-gray-300 disabled:cursor-not-allowed disabled:shadow-none;
+    }
+
+    .btn-secondary {
+        @apply px-4 py-2 bg-white/50 hover:bg-white text-gray-700 font-medium rounded-xl border border-gray-200 transition-all duration-300 active:scale-[0.98];
+    }
+
+    .premium-scrollbar {
+        scrollbar-width: thin;
+        scrollbar-color: #E2E8F0 transparent;
+    }
+
+    .premium-scrollbar::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .premium-scrollbar::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .premium-scrollbar::-webkit-scrollbar-thumb {
+        background-color: #E2E8F0;
+        border-radius: 20px;
+    }
+
+    .premium-scrollbar::-webkit-scrollbar-thumb:hover {
+        background-color: #CBD5E1;
+    }
+}
+
+/* Base fade-in for page load */
+.animate-in {
+    animation: fadeIn 0.5s ease-out forwards;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Gentle bounce for drag-drop icon */
+.animate-bounce-gentle {
+    animation: bounceGentle 1.5s ease-in-out infinite;
+}
+
+@keyframes bounceGentle {
+
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-8px);
+    }
+}
+
+/* Staggered card reveal */
+.glass-card {
+    animation: cardReveal 0.4s ease-out both;
+}
+
+@keyframes cardReveal {
+    from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.97);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Selection ring pulse */
+@keyframes ringPulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(2, 113, 199, 0.2);
+    }
+
+    50% {
+        box-shadow: 0 0 0 4px rgba(2, 113, 199, 0.1);
+    }
+}
+
+.ring-2.ring-brand-200 {
+    animation: ringPulse 2s ease-in-out infinite;
+}
