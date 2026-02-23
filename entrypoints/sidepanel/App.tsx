@@ -26,6 +26,12 @@ import {
     Building2,
     Briefcase
 } from "lucide-react";
+import { scanMultipleResumes } from "../../utils/atsScanner";
+import { loadSettings, saveSettings, UserSettings, DEFAULT_SETTINGS } from "../../utils/settings";
+import { getSessionId } from "../../utils/session";
+import SettingsModal from "../../components/SettingsModal";
+import FloatingOverlay from "../../components/FloatingOverlay";
+import FloatingButton from "../../components/FloatingButton";
 
 interface JobData {
     jd: string;
@@ -108,13 +114,32 @@ export default function App() {
     const [isDragOver, setIsDragOver] = useState(false);
     const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
     const [showUploadZone, setShowUploadZone] = useState(false);
+    const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
+    const [showSettings, setShowSettings] = useState(false);
+    const [isOverlayExpanded, setIsOverlayExpanded] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const dropZoneRef = useRef<HTMLDivElement>(null);
     const dragCounter = useRef(0);
 
+    // Load settings on mount
+    useEffect(() => {
+        loadSettings().then(setSettings);
+        
+        // Initialize session
+        getSessionId().then((sessionId) => {
+            if (sessionId) {
+                console.log('Session initialized:', sessionId);
+            } else {
+                console.error('Failed to initialize session');
+            }
+        });
+    }, []);
+
     useEffect(() => {
         chrome.storage?.local?.get("resumes", (data) => {
-            if (data?.resumes) setResumes(data.resumes);
+            if (data?.resumes && Array.isArray(data.resumes)) {
+                setResumes(data.resumes as Resume[]);
+            }
         });
 
         const messageListener = (msg: any) => {
@@ -131,6 +156,12 @@ export default function App() {
         chrome.runtime?.onMessage.addListener(messageListener);
         return () => chrome.runtime?.onMessage.removeListener(messageListener);
     }, []);
+
+    const handleSettingsChange = async (newSettings: Partial<UserSettings>) => {
+        const updated = { ...settings, ...newSettings };
+        setSettings(updated);
+        await saveSettings(newSettings);
+    };
 
     const processFiles = useCallback(async (fileList: FileList | File[]) => {
         const files = Array.from(fileList).filter((f) =>
@@ -307,18 +338,21 @@ export default function App() {
     const startScan = () => {
         if (!jobData.jd || selectedResumes.length === 0) return;
         setScanning(true);
-        chrome.runtime?.sendMessage({
-            type: "SCAN_REQUEST",
-            data: {
-                jd: jobData.jd,
-                resumes: selectedResumes.map((r) => ({ id: r.id, content: r.content })),
-            },
-        });
+        
+        // Use local ATS scanner instead of sending to background
+        setTimeout(() => {
+            const scanResults = scanMultipleResumes(
+                selectedResumes.map((r) => ({ id: r.id, content: r.content })),
+                jobData.jd
+            );
+            setResults(scanResults);
+            setScanning(false);
+        }, 800); // Small delay for UX
     };
 
-    return (
+    const mainContent = (
         <div
-            className="flex flex-col h-screen max-w-[400px] mx-auto bg-slate-50 premium-scrollbar overflow-hidden relative"
+            className="flex flex-col h-full max-w-[400px] mx-auto bg-slate-50 premium-scrollbar overflow-hidden relative"
             onDragEnter={handleDragEnter}
             onDragLeave={handleDragLeave}
             onDragOver={handleDragOver}
@@ -353,7 +387,11 @@ export default function App() {
                             <span className="text-xs font-bold text-brand-700">{resumes.length}</span>
                         </div>
                     )}
-                    <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+                    <button 
+                        onClick={() => setShowSettings(true)}
+                        className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                        title="Settings"
+                    >
                         <Settings className="w-5 h-5" />
                     </button>
                 </div>
@@ -838,5 +876,43 @@ export default function App() {
                 </div>
             </footer>
         </div>
+    );
+
+    // Render based on display mode
+    if (settings.displayMode === 'overlay') {
+        return (
+            <>
+                <FloatingButton
+                    onClick={() => setIsOverlayExpanded(true)}
+                    isExpanded={isOverlayExpanded}
+                />
+                {isOverlayExpanded && (
+                    <FloatingOverlay
+                        onClose={() => setIsOverlayExpanded(false)}
+                    >
+                        {mainContent}
+                    </FloatingOverlay>
+                )}
+                <SettingsModal
+                    isOpen={showSettings}
+                    onClose={() => setShowSettings(false)}
+                    settings={settings}
+                    onSettingsChange={handleSettingsChange}
+                />
+            </>
+        );
+    }
+
+    // Sidebar mode (default)
+    return (
+        <>
+            {mainContent}
+            <SettingsModal
+                isOpen={showSettings}
+                onClose={() => setShowSettings(false)}
+                settings={settings}
+                onSettingsChange={handleSettingsChange}
+            />
+        </>
     );
 }

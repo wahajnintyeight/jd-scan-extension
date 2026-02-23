@@ -5,6 +5,13 @@ export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   manifest: {
     permissions: ['sidePanel', 'storage', 'tabs', 'activeTab'],
-    host_permissions: ['*://*.linkedin.com/*', '*://*.indeed.com/*'],
+    host_permissions: [
+      '*://*.linkedin.com/*',
+      '*://*.indeed.com/*',
+      '*://*.glassdoor.com/*',
+      '*://*.wellfound.com/*',
+      '*://*.indeed.co.uk/*',
+      '*://*.indeed.ca/*',
+    ],
   },
 });

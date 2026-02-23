@@ -125,3 +125,17 @@
 .ring-2.ring-brand-200 {
     animation: ringPulse 2s ease-in-out infinite;
 }
+
+/* Bounce animation for floating button */
+@keyframes bounce-gentle {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-10px);
+    }
+}
+
+.animate-bounce-gentle {
+    animation: bounce-gentle 2s ease-in-out infinite;
+}
