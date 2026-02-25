@@ -7,6 +7,13 @@ import SidepanelApp from "../sidepanel/App";
 import { loadSettings } from "../../utils/settings";
 import "../../entrypoints/sidepanel/style.css";
 
+function getElementText(el: Element | null): string {
+    if (!el) return "";
+    const anyEl = el as any;
+    const text = (typeof anyEl.innerText === 'string' ? anyEl.innerText : el.textContent) || "";
+    return text.replace(/\s+\n/g, "\n").replace(/\n\s+/g, "\n").trim();
+}
+
 function isLikelyJobPage(): boolean {
     const url = window.location.href.toLowerCase();
     const isJob = url.includes("linkedin.com/jobs") ||
@@ -24,63 +31,89 @@ function isLikelyJobPage(): boolean {
     return isJob;
 }
 
-function extractJobData(): { jd: string; title: string; company: string } {
+function extractJobData(): { jd: string; title: string; company: string; debug?: any } {
     let jd = "";
     let title = "";
     let company = "";
+    const debug: any = { tried: [], found: null, textLength: 0 };
 
-    // LinkedIn Specifics
-    const linkedInJD = document.querySelector(".jobs-description__content") ||
-        document.querySelector(".jobs-box__html-content") ||
-        document.querySelector("#job-details") ||
-        document.querySelector(".jobs-search__job-details") || // Search view right pane
-        document.querySelector(".job-view-layout");
+    // LinkedIn Specifics - Try multiple strategies
+    const linkedInSelectors = [
+        // Job description containers
+        ".jobs-description__content",
+        ".jobs-description-content__text",
+        ".jobs-description-content",
+        ".jobs-box__html-content",
+        "#job-details",
+        ".jobs-search__job-details",
+        ".jobs-search__job-details--wrapper",
+        ".jobs-search__job-details--container",
+        ".jobs-details__main-content",
+        ".jobs-details__container",
+        ".job-view-layout",
+        "section.jobs-description",
+        "[class*='jobs-description']",
+        // More aggressive - any section with job-related text
+        ".jobs-unified-top-card~div",
+        ".jobs-search__right-rail",
+    ];
 
-    if (linkedInJD) {
-        jd = linkedInJD.textContent?.trim() || "";
-        // Try to find title/company in the details pane
-        title = document.querySelector(".jobs-unified-top-card__job-title")?.textContent?.trim() ||
-            document.querySelector(".t-24.t-bold")?.textContent?.trim() || "";
-        company = document.querySelector(".jobs-unified-top-card__company-name")?.textContent?.trim() ||
-            document.querySelector(".jobs-unified-top-card__primary-description")?.textContent?.trim() || "";
-    }
-
-    // Indeed Specifics
-    if (!jd) {
-        const indeedJD = document.querySelector("#jobDescriptionText") ||
-            document.querySelector(".jobsearch-JobComponent-description");
-        if (indeedJD) {
-            jd = indeedJD.textContent?.trim() || "";
-            title = document.querySelector(".jobsearch-JobInfoHeader-title")?.textContent?.trim() || "";
-            company = document.querySelector('[data-company-name="true"]')?.textContent?.trim() || "";
-        }
-    }
-
-    // Generic fallback
-    if (!jd) {
-        const selectors = [
-            '[data-testid="jobDescription"]',
-            '.job-description',
-            '#job-description',
-            '.description',
-            'article',
-        ];
-
-        for (const selector of selectors) {
-            const element = document.querySelector(selector);
-            if (element && element.textContent && element.textContent.length > 200) {
-                jd = element.textContent.trim();
-                break;
+    for (const selector of linkedInSelectors) {
+        const el = document.querySelector(selector);
+        debug.tried.push({ selector, found: !!el });
+        if (el) {
+            const text = getElementText(el);
+            debug.found = { selector, textLength: text.length, preview: text.slice(0, 100) };
+            if (text.length > jd.length && text.length > 50) {
+                jd = text;
             }
         }
     }
 
-    // Last resort generic page scan
-    if (!jd && isLikelyJobPage()) {
-        jd = document.body.innerText.substring(0, 10000).trim();
+    // If we found something, try to get title/company
+    if (jd) {
+        title = getElementText(document.querySelector(".jobs-unified-top-card__job-title")) ||
+            getElementText(document.querySelector("h1")) ||
+            getElementText(document.querySelector(".t-24.t-bold")) ||
+            getElementText(document.querySelector("[class*='job-title']")) || "";
+        company = getElementText(document.querySelector(".jobs-unified-top-card__company-name")) ||
+            getElementText(document.querySelector(".jobs-unified-top-card__primary-description")) ||
+            getElementText(document.querySelector(".jobs-company__name")) ||
+            getElementText(document.querySelector("[class*='company-name']")) || "";
     }
 
-    return { jd, title, company };
+    // Fallback: Look for job description by searching for common job description patterns
+    if (!jd || jd.length < 100) {
+        const allSections = document.querySelectorAll('section, article, div[role="main"], .jobs-box');
+        for (const section of Array.from(allSections)) {
+            const text = getElementText(section);
+            // Look for sections with job-related keywords and decent length
+            if (text.length > 200 && text.length < 10000) {
+                const hasJobKeywords = /(?:requirements?|responsibilities?|qualifications?|experience|skills?|about (?:the )?job|description)/i.test(text);
+                if (hasJobKeywords && text.length > (jd?.length || 0)) {
+                    jd = text;
+                    debug.fallback = { type: 'keyword-search', selector: section.className || section.tagName, length: text.length };
+                }
+            }
+        }
+    }
+
+    // Last resort: Look at the right rail specifically
+    if (!jd || jd.length < 100) {
+        const rightRail = document.querySelector('.jobs-search__right-rail, .jobs-details__main-content, [class*="job-details"]');
+        if (rightRail) {
+            const text = getElementText(rightRail);
+            if (text.length > jd.length) {
+                jd = text;
+                debug.lastResort = { found: true, length: text.length };
+            }
+        }
+    }
+
+    debug.final = { jdLength: jd.length, title, company };
+    console.log("JD Scan: Extraction debug", debug);
+
+    return { jd, title, company, debug };
 }
 
 // Content script overlay — SidepanelApp manages its own overlay/button UI internally
@@ -124,26 +157,38 @@ export default defineContentScript({
     async main() {
         console.log("JD Scan content script loaded");
 
-        // Always create container if we're on a supported host
-        const container = document.createElement('div');
-        container.id = 'jd-scan-overlay-root';
-        container.style.position = 'fixed';
-        container.style.zIndex = '2147483647'; // Maximum possible z-index
-        container.style.top = '0';
-        container.style.left = '0';
-        container.style.width = '0';
-        container.style.height = '0';
-        container.style.overflow = 'visible';
-        container.style.pointerEvents = 'none';
-        document.body.appendChild(container);
+        // Wait for document.body to be available
+        const initializeExtension = () => {
+            if (!document.body) {
+                console.log("JD Scan: Waiting for document.body...");
+                setTimeout(initializeExtension, 100);
+                return;
+            }
 
-        // Render the overlay
-        const root = ReactDOM.createRoot(container);
-        root.render(
-            <React.StrictMode>
-                <OverlayApp />
-            </React.StrictMode>
-        );
+            // Always create container if we're on a supported host
+            const container = document.createElement('div');
+            container.id = 'jd-scan-overlay-root';
+            container.style.position = 'fixed';
+            container.style.zIndex = '2147483647'; // Maximum possible z-index
+            container.style.top = '0';
+            container.style.left = '0';
+            container.style.width = '0';
+            container.style.height = '0';
+            container.style.overflow = 'visible';
+            container.style.pointerEvents = 'none';
+            document.body.appendChild(container);
+
+            // Render the overlay
+            const root = ReactDOM.createRoot(container);
+            root.render(
+                <React.StrictMode>
+                    <OverlayApp />
+                </React.StrictMode>
+            );
+        };
+
+        // Start initialization
+        initializeExtension();
 
         // Message listener for commands
         chrome.runtime.onMessage.addListener((request: any, sender: any, sendResponse: any) => {
@@ -164,16 +209,99 @@ export default defineContentScript({
 
         // Proactively send JD if we think we are on a job page
         if (isLikelyJobPage()) {
-            const pollJD = () => {
+            console.log("JD Scan: Starting proactive JD detection on", window.location.href);
+            let lastSentKey = "";
+            let debounceTimer: number | null = null;
+            let attempts = 0;
+            const maxAttempts = 20;
+
+            // Define pollJD first
+            const pollJD = (attemptNum: number = 1) => {
                 const data = extractJobData();
-                if (data.jd.length > 200) {
-                    chrome.runtime.sendMessage({ type: "JD_FOUND", data }).catch(() => { });
+                const jdOk = data.jd.length >= 80;
+                const key = `${data.title}::${data.company}::${data.jd.slice(0, 300)}`;
+
+                console.log(`JD Scan: Poll attempt ${attemptNum}`, { jdOk, jdLength: data.jd.length, title: data.title, company: data.company, keyPreview: key.slice(0, 50) });
+
+                if (jdOk && key !== lastSentKey) {
+                    lastSentKey = key;
+                    console.log("JD Scan: Sending JD_FOUND", { title: data.title, jdLength: data.jd.length });
+                    
+                    // Method 1: Try sendMessage (may fail if sidepanel not ready)
+                    try {
+                        chrome.runtime.sendMessage({ type: "JD_FOUND", data }, (response) => {
+                            if (chrome.runtime.lastError) {
+                                console.error("JD Scan: Send failed (expected if sidepanel closed)", chrome.runtime.lastError.message);
+                            } else {
+                                console.log("JD Scan: Send succeeded", response);
+                            }
+                        });
+                    } catch (e) {
+                        console.error("JD Scan: Send error", e);
+                    }
+                    
+                    // Method 2: Also write to storage (reliable fallback)
+                    chrome.storage?.local?.set({ 
+                        jdScan_lastJob: { 
+                            data, 
+                            timestamp: Date.now(),
+                            url: window.location.href 
+                        } 
+                    }).then(() => {
+                        console.log("JD Scan: Saved to storage");
+                    }).catch((err) => {
+                        console.error("JD Scan: Storage save failed", err);
+                    });
+                    
+                    return true;
                 }
+                if (!jdOk) {
+                    console.log("JD Scan: JD not ready yet (length < 80)");
+                } else if (key === lastSentKey) {
+                    console.log("JD Scan: JD unchanged, skipping send");
+                }
+                return false;
             };
 
-            setTimeout(pollJD, 2000);
-            // Also poll on clicks since LinkedIn is a SPA and might change view
-            document.addEventListener('click', () => setTimeout(pollJD, 1000));
+            const schedulePoll = (delayMs: number) => {
+                if (debounceTimer) window.clearTimeout(debounceTimer);
+                debounceTimer = window.setTimeout(() => {
+                    attempts++;
+                    const success = pollJD(attempts);
+                    if (!success && attempts < maxAttempts) {
+                        console.log(`JD Scan: Will retry (${attempts}/${maxAttempts})`);
+                        // Actually schedule the next retry!
+                        schedulePoll(1000);
+                    }
+                }, delayMs);
+            };
+
+            // Start polling
+            schedulePoll(500);
+            schedulePoll(1500);
+            schedulePoll(3000);
+
+            // LinkedIn SPA mutation observer
+            const domObserver = new MutationObserver((mutations) => {
+                const hasMeaningfulChange = mutations.some(m => 
+                    m.type === 'childList' && 
+                    ((m.target as Element).className?.includes('jobs') || 
+                    (m.target as Element).className?.includes('description'))
+                );
+                if (hasMeaningfulChange && isLikelyJobPage()) {
+                    console.log("JD Scan: Detected DOM change in job area");
+                    schedulePoll(600);
+                }
+            });
+            domObserver.observe(document.documentElement, { subtree: true, childList: true });
+
+            // Poll on clicks
+            document.addEventListener('click', () => {
+                console.log("JD Scan: Click detected, scheduling poll");
+                attempts = 0;
+                schedulePoll(800);
+                schedulePoll(2000);
+            });
         }
     },
 });

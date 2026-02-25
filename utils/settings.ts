@@ -8,6 +8,7 @@ export interface UserSettings {
   overlayPosition: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
   autoScan: boolean;
   showNotifications: boolean;
+  selectedLLMConfigId?: string; // ID of the LLM config to use for ATS scanning
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -16,7 +17,71 @@ export const DEFAULT_SETTINGS: UserSettings = {
   overlayPosition: 'bottom-right',
   autoScan: true,
   showNotifications: true,
+  selectedLLMConfigId: undefined,
 };
+
+/**
+ * Persistent state for color mode listener to avoid duplication
+ */
+let mqlListener: ((event: MediaQueryListEvent) => void) | null = null;
+let currentMql: MediaQueryList | null = null;
+
+/**
+ * Apply the given color mode to the current document by toggling the `dark` class.
+ * - "light": always remove `dark`
+ * - "dark": always add `dark`
+ * - "auto": follow system preference via prefers-color-scheme
+ */
+export function applyColorMode(colorMode: UserSettings['colorMode']) {
+  if (typeof document === 'undefined') return;
+
+  const root = document.documentElement;
+
+  // Cleanup old listener if it exists
+  if (currentMql && mqlListener) {
+    if (typeof currentMql.removeEventListener === 'function') {
+      currentMql.removeEventListener('change', mqlListener);
+    } else if (typeof (currentMql as any).removeListener === 'function') {
+      (currentMql as any).removeListener(mqlListener);
+    }
+    mqlListener = null;
+    currentMql = null;
+  }
+
+  const setFromPreference = () => {
+    const prefersDark = window.matchMedia &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches;
+    root.classList.toggle('dark', prefersDark);
+  };
+
+  if (colorMode === 'light') {
+    root.classList.remove('dark');
+  } else if (colorMode === 'dark') {
+    root.classList.add('dark');
+  } else {
+    setFromPreference();
+
+    // Keep following system changes while in "auto"
+    const mql = window.matchMedia
+      ? window.matchMedia('(prefers-color-scheme: dark)')
+      : null;
+      
+    if (mql) {
+      currentMql = mql;
+      mqlListener = (event: MediaQueryListEvent) => {
+        root.classList.toggle('dark', event.matches);
+      };
+      
+      // Use addEventListener when available, fallback otherwise
+      if (typeof mql.addEventListener === 'function') {
+        mql.addEventListener('change', mqlListener);
+      } else if (typeof (mql as any).addListener === 'function') {
+        (mql as any).addListener(mqlListener);
+      }
+    }
+  }
+}
+
 
 /**
  * Load user settings from storage

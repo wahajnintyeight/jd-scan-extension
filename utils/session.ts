@@ -4,12 +4,22 @@
  */
 
 // Get API base URL from environment or use default
-const getApiBaseUrl = () => {
-  // Try to get from import.meta.env (Vite)
-  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL;
+const getApiBaseUrl = (): string => {
+  // Try to get from import.meta.env (Vite/WXT)
+  try {
+    if (import.meta?.env?.VITE_API_BASE_URL) {
+      const url = import.meta.env.VITE_API_BASE_URL;
+      // Ensure it's an absolute URL
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        return url;
+      }
+    }
+  } catch (e) {
+    // import.meta might not be available in all contexts
+    console.warn('[Session] Failed to access import.meta.env:', e);
   }
-  // Fallback to default
+  
+  // Fallback to default - ensure it's an absolute URL
   return 'http://localhost:8881/v2/api';
 };
 
@@ -19,6 +29,11 @@ const SESSION_EXPIRY_HOURS = 1;
 
 // Debug log to verify API URL is set correctly
 console.log('[Session] Base URL:', API_BASE_URL);
+
+// Validate that we have a proper URL
+if (!API_BASE_URL.startsWith('http://') && !API_BASE_URL.startsWith('https://')) {
+  console.error('[Session] Invalid API base URL - must be absolute:', API_BASE_URL);
+}
 
 interface SessionData {
   sessionId: string;

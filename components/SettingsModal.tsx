@@ -1,5 +1,11 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import React, { useState, useEffect } from 'react';
-import { X, Monitor, Moon, Sun, Layout, Layers, Bell, Zap, Cpu, Key, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Monitor, Moon, Sun, Layout, Layers, Bell, Zap, Cpu, Key, CheckCircle2, AlertCircle, Loader2, Power, Trash2, Sparkles, Shield } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { UserSettings } from '../utils/settings';
 import { 
   LLM_PROVIDERS, 
@@ -19,11 +25,13 @@ interface SettingsModalProps {
   onClose: () => void;
   settings: UserSettings;
   onSettingsChange: (settings: Partial<UserSettings>) => void;
+  llmConfigs?: LLMAPIConfig[];
+  onConfigsChange?: () => void;
 }
 
-export default function SettingsModal({ isOpen, onClose, settings, onSettingsChange }: SettingsModalProps) {
+export default function SettingsModal({ isOpen, onClose, settings, onSettingsChange, llmConfigs: propConfigs, onConfigsChange }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<'general' | 'llm'>('general');
-  const [configs, setConfigs] = useState<LLMAPIConfig[]>([]);
+  const [configs, setConfigs] = useState<LLMAPIConfig[]>(propConfigs || []);
   const [loading, setLoading] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -47,11 +55,21 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
     }
   }, [isOpen, activeTab]);
 
+  // Sync with prop configs
+  useEffect(() => {
+    if (propConfigs) {
+      setConfigs(propConfigs);
+    }
+  }, [propConfigs]);
+
   const loadConfigs = async () => {
     setLoading(true);
     const data = await fetchLLMConfigs();
     setConfigs(data);
     setLoading(false);
+    if (onConfigsChange) {
+      onConfigsChange();
+    }
   };
 
   const handleProviderChange = (provider: string) => {
@@ -61,52 +79,52 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
       provider,
       model: models[0] || '',
     });
-    setTestResult(null); // Clear test result when provider changes
-    setOpenRouterModels([]); // Clear OpenRouter models
+    setTestResult(null);
+    setOpenRouterModels([]);
   };
 
   const handleFetchOpenRouterModels = async (apiKey: string) => {
-    if (!apiKey || !apiKey.startsWith('sk-or-v1-')) {
-      return;
-    }
+    if (!apiKey || !apiKey.startsWith('sk-or-v1-')) return;
 
     setFetchingModels(true);
-    setFormError(''); // Clear any previous errors
+    setFormError('');
     const result = await fetchOpenRouterModels(apiKey);
     setFetchingModels(false);
 
     if (result.success && result.models) {
       setOpenRouterModels(result.models);
-      console.log(`Fetched ${result.models.length} OpenRouter models`);
     } else {
-      const errorMessage = typeof result.error === 'string' 
-        ? result.error 
-        : 'Failed to fetch models';
-      console.error('Failed to fetch OpenRouter models:', result.error);
+      const errorMessage = typeof result.error === 'string' ? result.error : 'Failed to fetch models';
       setFormError(errorMessage);
     }
   };
 
-  // Search handler for SearchableDropdown
   const handleModelSearch = async (query: string): Promise<DropdownOption[]> => {
-    if (openRouterModels.length === 0) {
-      return [];
+    if (formData.provider === 'openrouter') {
+      if (openRouterModels.length === 0) return [];
+
+      const filtered = openRouterModels.filter(model =>
+        model.name.toLowerCase().includes(query.toLowerCase()) ||
+        model.id.toLowerCase().includes(query.toLowerCase())
+      );
+
+      return filtered.map(model => ({
+        id: model.id,
+        name: model.name,
+        description: model.description,
+        metadata: {
+          context_length: model.context_length,
+          pricing: model.pricing,
+        },
+      }));
     }
 
-    const filtered = openRouterModels.filter(model =>
-      model.name.toLowerCase().includes(query.toLowerCase()) ||
-      model.id.toLowerCase().includes(query.toLowerCase())
+    const models = getModelsForProvider(formData.provider);
+    const filtered = models.filter(model =>
+      model.toLowerCase().includes(query.toLowerCase())
     );
 
-    return filtered.map(model => ({
-      id: model.id,
-      name: model.name,
-      description: model.description,
-      metadata: {
-        context_length: model.context_length,
-        pricing: model.pricing,
-      },
-    }));
+    return filtered.map(model => ({ id: model, name: model }));
   };
 
   const handleTestConnection = async () => {
@@ -114,7 +132,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
     setTestResult(null);
 
     if (!formData.provider || !formData.model || !formData.apiKey) {
-      setFormError('Please fill in provider, model, and API key to test connection');
+      setFormError('Fill in provider, model, and API key to test');
       return;
     }
 
@@ -123,9 +141,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
     setTesting(false);
     setTestResult(result);
 
-    if (!result.success) {
-      setFormError(result.message || 'Connection test failed');
-    }
+    if (!result.success) setFormError(result.message || 'Connection test failed');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -143,558 +159,643 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
     setSubmitting(false);
 
     if (result.success) {
-      setFormSuccess('Configuration saved successfully!');
-      setFormData({
-        name: '',
-        provider: 'openai',
-        model: '',
-        apiKey: '',
-        isActive: true,
-      });
+      setFormSuccess('Configuration saved!');
+      setFormData({ name: '', provider: 'openai', model: '', apiKey: '', isActive: true });
       setTimeout(() => {
         setShowAddForm(false);
         setFormSuccess('');
         loadConfigs();
       }, 1500);
     } else {
-      setFormError(result.error || 'Failed to save configuration');
+      setFormError(result.error || 'Failed to save');
     }
   };
 
   const handleToggleActive = async (id: string, currentStatus: boolean) => {
     const result = await updateLLMConfig(id, { isActive: !currentStatus });
-    if (result.success) {
-      loadConfigs();
-    }
+    if (result.success) loadConfigs();
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this configuration?')) return;
-    
     const result = await deleteLLMConfig(id);
-    if (result.success) {
-      loadConfigs();
-    }
+    if (result.success) loadConfigs();
   };
 
   if (!isOpen) return null;
 
-  const availableModels = getModelsForProvider(formData.provider);
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-hidden animate-in flex flex-col">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+      />
+      
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        className="relative w-full max-w-4xl max-h-[90vh] bg-background rounded-3xl shadow-2xl overflow-hidden flex flex-col"
+      >
+        {/* Decorative Header Background */}
+        <div className="absolute top-0 left-0 right-0 h-48 bg-gradient-to-br from-brand-500/10 via-purple-500/10 to-transparent pointer-events-none" />
+        
         {/* Header */}
-        <div className="flex items-center justify-between px-8 py-5 border-b border-slate-200 bg-gradient-to-r from-brand-50 to-slate-50">
-          <h2 className="text-xl font-bold text-slate-900 font-display">Settings</h2>
+        <div className="relative flex items-center justify-between px-8 py-6 border-b border-border/50">
+          <div>
+            <h2 className="text-2xl font-black tracking-tight text-foreground">
+              Settings
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">Customize your JD Scan experience</p>
+          </div>
           <button
             onClick={onClose}
-            className="p-2.5 hover:bg-slate-100 rounded-lg transition-colors"
+            className="p-2.5 hover:bg-muted rounded-xl transition-all active:scale-95 group"
           >
-            <X className="w-5 h-5 text-slate-500" />
+            <X className="w-5 h-5 text-muted-foreground group-hover:text-foreground" />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-slate-200 bg-white px-8">
+        <div className="relative flex gap-2 px-8 pt-4 bg-muted/30">
           <button
             onClick={() => setActiveTab('general')}
-            className={`flex items-center gap-2 px-5 py-4 text-sm font-semibold border-b-2 transition-colors ${
+            className={`relative flex items-center gap-2 px-6 py-3 text-sm font-bold rounded-t-xl transition-all ${
               activeTab === 'general'
-                ? 'border-brand-600 text-brand-700'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
+                ? 'bg-background text-brand-600 shadow-sm'
+                : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
             }`}
           >
             <Layout className="w-4 h-4" />
             General
+            {activeTab === 'general' && (
+              <motion.div
+                layoutId="activeTab"
+                className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-600"
+              />
+            )}
           </button>
           <button
             onClick={() => setActiveTab('llm')}
-            className={`flex items-center gap-2 px-5 py-4 text-sm font-semibold border-b-2 transition-colors ${
+            className={`relative flex items-center gap-2 px-6 py-3 text-sm font-bold rounded-t-xl transition-all ${
               activeTab === 'llm'
-                ? 'border-brand-600 text-brand-700'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
+                ? 'bg-background text-brand-600 shadow-sm'
+                : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
             }`}
           >
             <Cpu className="w-4 h-4" />
             LLM API
+            {activeTab === 'llm' && (
+              <motion.div
+                layoutId="activeTab"
+                className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-600"
+              />
+            )}
           </button>
         </div>
 
         {/* Content */}
-        <div className="px-8 py-6 space-y-8 overflow-y-auto premium-scrollbar flex-1">
-          
-          {activeTab === 'general' && (
-            <>
-          {/* Display Mode */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <Layout className="w-5 h-5 text-brand-600" />
-              <h3 className="text-base font-bold text-slate-900">Display Mode</h3>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <button
-                onClick={() => onSettingsChange({ displayMode: 'sidebar' })}
-                className={`p-6 rounded-xl border-2 transition-all ${
-                  settings.displayMode === 'sidebar'
-                    ? 'border-brand-500 bg-brand-50 shadow-sm'
-                    : 'border-slate-200 hover:border-brand-300 hover:bg-slate-50'
-                }`}
+        <div className="flex-1 overflow-y-auto bg-background">
+          <AnimatePresence mode="wait">
+            {activeTab === 'general' ? (
+              <motion.div
+                key="general"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                className="p-8 space-y-8"
               >
-                <Layout className={`w-8 h-8 mx-auto mb-3 ${
-                  settings.displayMode === 'sidebar' ? 'text-brand-600' : 'text-slate-400'
-                }`} />
-                <p className={`text-sm font-semibold ${
-                  settings.displayMode === 'sidebar' ? 'text-brand-700' : 'text-slate-600'
-                }`}>
-                  Sidebar
-                </p>
-              </button>
-              <button
-                onClick={() => onSettingsChange({ displayMode: 'overlay' })}
-                className={`p-6 rounded-xl border-2 transition-all ${
-                  settings.displayMode === 'overlay'
-                    ? 'border-brand-500 bg-brand-50 shadow-sm'
-                    : 'border-slate-200 hover:border-brand-300 hover:bg-slate-50'
-                }`}
-              >
-                <Layers className={`w-8 h-8 mx-auto mb-3 ${
-                  settings.displayMode === 'overlay' ? 'text-brand-600' : 'text-slate-400'
-                }`} />
-                <p className={`text-sm font-semibold ${
-                  settings.displayMode === 'overlay' ? 'text-brand-700' : 'text-slate-600'
-                }`}>
-                  Floating
-                </p>
-              </button>
-            </div>
-          </div>
-
-          {/* Overlay Position (only show if overlay mode) */}
-          {settings.displayMode === 'overlay' && (
-            <div className="space-y-4">
-              <h3 className="text-base font-bold text-slate-900">Overlay Position</h3>
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { value: 'top-left', label: 'Top Left' },
-                  { value: 'top-right', label: 'Top Right' },
-                  { value: 'bottom-left', label: 'Bottom Left' },
-                  { value: 'bottom-right', label: 'Bottom Right' },
-                ].map((pos) => (
-                  <button
-                    key={pos.value}
-                    onClick={() => onSettingsChange({ overlayPosition: pos.value as any })}
-                    className={`px-4 py-3 rounded-lg text-sm font-semibold transition-all ${
-                      settings.overlayPosition === pos.value
-                        ? 'bg-brand-600 text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {pos.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Color Mode */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <Sun className="w-5 h-5 text-brand-600" />
-              <h3 className="text-base font-bold text-slate-900">Appearance</h3>
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              {[
-                { value: 'light', label: 'Light', icon: Sun },
-                { value: 'dark', label: 'Dark', icon: Moon },
-                { value: 'auto', label: 'Auto', icon: Monitor },
-              ].map((mode) => (
-                <button
-                  key={mode.value}
-                  onClick={() => onSettingsChange({ colorMode: mode.value as any })}
-                  className={`p-5 rounded-xl border-2 transition-all ${
-                    settings.colorMode === mode.value
-                      ? 'border-brand-500 bg-brand-50'
-                      : 'border-slate-200 hover:border-brand-300 hover:bg-slate-50'
-                  }`}
-                >
-                  <mode.icon className={`w-7 h-7 mx-auto mb-2 ${
-                    settings.colorMode === mode.value ? 'text-brand-600' : 'text-slate-400'
-                  }`} />
-                  <p className={`text-sm font-semibold ${
-                    settings.colorMode === mode.value ? 'text-brand-700' : 'text-slate-600'
-                  }`}>
-                    {mode.label}
-                  </p>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Preferences */}
-          <div className="space-y-4">
-            <h3 className="text-base font-bold text-slate-900">Preferences</h3>
-            <div className="space-y-3">
-              <label className="flex items-center justify-between p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100 transition-colors">
-                <div className="flex items-center gap-4">
-                  <Zap className="w-5 h-5 text-slate-500" />
-                  <div>
-                    <p className="text-sm font-semibold text-slate-700">Auto-scan pages</p>
-                    <p className="text-xs text-slate-500 mt-0.5">Automatically detect job descriptions</p>
-                  </div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.autoScan}
-                  onChange={(e) => onSettingsChange({ autoScan: e.target.checked })}
-                  className="w-5 h-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                />
-              </label>
-
-              <label className="flex items-center justify-between p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100 transition-colors">
-                <div className="flex items-center gap-4">
-                  <Bell className="w-5 h-5 text-slate-500" />
-                  <div>
-                    <p className="text-sm font-semibold text-slate-700">Notifications</p>
-                    <p className="text-xs text-slate-500 mt-0.5">Show scan completion alerts</p>
-                  </div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.showNotifications}
-                  onChange={(e) => onSettingsChange({ showNotifications: e.target.checked })}
-                  className="w-5 h-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                />
-              </label>
-            </div>
-          </div>
-
-          </>
-          )}
-
-          {activeTab === 'llm' && (
-            <>
-              {/* Add New Config Button */}
-              {!showAddForm && (
-                <button
-                  onClick={() => setShowAddForm(true)}
-                  className="w-full p-5 border-2 border-dashed border-brand-300 rounded-xl hover:border-brand-500 hover:bg-brand-50 transition-all flex items-center justify-center gap-2 text-brand-600 font-semibold"
-                >
-                  <Zap className="w-5 h-5" />
-                  Add New Configuration
-                </button>
-              )}
-
-              {/* Add Form */}
-              {showAddForm && (
-                <div className="glass-card p-6 space-y-5 border-brand-200">
-                  <div className="flex items-center justify-between mb-1">
-                    <h3 className="text-base font-bold text-slate-900">New Configuration</h3>
-                    <button
-                      onClick={() => {
-                        setShowAddForm(false);
-                        setFormError('');
-                        setFormSuccess('');
-                      }}
-                      className="text-xs text-slate-500 hover:text-slate-700"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-
-                  <form onSubmit={handleSubmit} className="space-y-5">
-                    {/* Name */}
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-2">
-                        Configuration Name
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        placeholder="e.g., OpenAI GPT-4 Production"
-                        className="w-full px-4 py-2.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
-                      />
+                {/* Display Mode */}
+                <section>
+                  <div className="flex items-center gap-2 mb-5">
+                    <div className="p-2 bg-brand-100 dark:bg-brand-900/30 rounded-lg">
+                      <Layout className="w-4 h-4 text-brand-600" />
                     </div>
-
-                    {/* Provider */}
                     <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-2">
-                        Provider
-                      </label>
-                      <select
-                        value={formData.provider}
-                        onChange={(e) => handleProviderChange(e.target.value)}
-                        className="w-full px-4 py-2.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                      <h3 className="text-base font-bold text-foreground">Display Mode</h3>
+                      <p className="text-xs text-muted-foreground">Choose how JD Scan appears</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    {[
+                      { id: 'sidebar', label: 'Sidebar Panel', desc: 'Docked to browser side', icon: Layout },
+                      { id: 'overlay', label: 'Floating Button', desc: 'Minimal overlay on pages', icon: Layers },
+                    ].map((mode) => (
+                      <motion.button
+                        key={mode.id}
+                        onClick={() => onSettingsChange({ displayMode: mode.id as any })}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        className={`relative p-6 rounded-2xl border-2 transition-all text-left overflow-hidden ${
+                          settings.displayMode === mode.id
+                            ? 'border-brand-500 bg-gradient-to-br from-brand-50/50 to-purple-50/50 dark:from-brand-900/20 dark:to-purple-900/20 shadow-lg'
+                            : 'border-border hover:border-brand-300 hover:bg-muted/50'
+                        }`}
                       >
-                        {LLM_PROVIDERS.map((provider) => (
-                          <option key={provider.value} value={provider.value}>
-                            {provider.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                        {settings.displayMode === mode.id && (
+                          <div className="absolute top-3 right-3">
+                            <div className="p-1 bg-brand-500 rounded-full">
+                              <CheckCircle2 className="w-3 h-3 text-white" />
+                            </div>
+                          </div>
+                        )}
+                        <mode.icon className={`w-8 h-8 mb-3 ${
+                          settings.displayMode === mode.id ? 'text-brand-600' : 'text-muted-foreground'
+                        }`} />
+                        <p className={`text-sm font-bold mb-1 ${
+                          settings.displayMode === mode.id ? 'text-brand-700 dark:text-brand-400' : 'text-foreground'
+                        }`}>
+                          {mode.label}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{mode.desc}</p>
+                      </motion.button>
+                    ))}
+                  </div>
+                </section>
 
-                    {/* Model */}
+                {/* Appearance */}
+                <section>
+                  <div className="flex items-center gap-2 mb-5">
+                    <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                      <Sun className="w-4 h-4 text-purple-600" />
+                    </div>
                     <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-2">
-                        Model
+                      <h3 className="text-base font-bold text-foreground">Appearance</h3>
+                      <p className="text-xs text-muted-foreground">Select your theme preference</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { id: 'light', label: 'Light', icon: Sun },
+                      { id: 'dark', label: 'Dark', icon: Moon },
+                      { id: 'auto', label: 'System', icon: Monitor },
+                    ].map((mode) => (
+                      <motion.button
+                        key={mode.id}
+                        onClick={() => onSettingsChange({ colorMode: mode.id as any })}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className={`p-5 rounded-xl border-2 transition-all ${
+                          settings.colorMode === mode.id
+                            ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 shadow-md'
+                            : 'border-border hover:border-purple-300 hover:bg-muted/50'
+                        }`}
+                      >
+                        <mode.icon className={`w-6 h-6 mx-auto mb-2 ${
+                          settings.colorMode === mode.id ? 'text-purple-600' : 'text-muted-foreground'
+                        }`} />
+                        <p className={`text-xs font-bold ${
+                          settings.colorMode === mode.id ? 'text-purple-700 dark:text-purple-400' : 'text-muted-foreground'
+                        }`}>
+                          {mode.label}
+                        </p>
+                      </motion.button>
+                    ))}
+                  </div>
+                </section>
+
+                {/* Preferences */}
+                <section>
+                  <div className="flex items-center gap-2 mb-5">
+                    <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+                      <Sparkles className="w-4 h-4 text-emerald-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-foreground">Preferences</h3>
+                      <p className="text-xs text-muted-foreground">Customize behavior</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {[
+                      { id: 'autoScan', label: 'Auto-scan pages', desc: 'Automatically detect job descriptions', icon: Zap },
+                      { id: 'showNotifications', label: 'Notifications', desc: 'Show scan completion alerts', icon: Bell },
+                    ].map((pref) => (
+                      <label
+                        key={pref.id}
+                        className="flex items-center justify-between p-4 bg-muted/50 hover:bg-muted rounded-xl cursor-pointer transition-all group"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="p-2 bg-background rounded-lg shadow-sm border border-border group-hover:border-brand-200 transition-colors">
+                            <pref.icon className="w-4 h-4 text-muted-foreground group-hover:text-brand-600" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-foreground">{pref.label}</p>
+                            <p className="text-xs text-muted-foreground">{pref.desc}</p>
+                          </div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={(settings as any)[pref.id]}
+                          onChange={(e) => onSettingsChange({ [pref.id]: e.target.checked })}
+                          className="w-5 h-5 rounded-lg border-border text-brand-600 focus:ring-brand-500 transition-all bg-background"
+                        />
                       </label>
-                      
-                      {formData.provider === 'openrouter' && openRouterModels.length > 0 ? (
-                        <SearchableDropdown
-                          value={formData.model}
-                          onChange={(modelId) => setFormData({ ...formData, model: modelId })}
-                          onSearch={handleModelSearch}
-                          placeholder="Search models..."
-                          loading={fetchingModels}
-                          renderOption={(option) => (
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-slate-800 truncate">
-                                  {option.name}
-                                </p>
-                                <p className="text-xs text-slate-500 truncate mt-0.5">
-                                  {option.id}
-                                </p>
-                                {option.description && (
-                                  <p className="text-xs text-slate-400 line-clamp-1 mt-1">
-                                    {option.description}
-                                  </p>
-                                )}
+                    ))}
+                  </div>
+                </section>
+
+                {/* LLM Config Selection */}
+                <section>
+                  <div className="flex items-center gap-2 mb-5">
+                    <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                      <Cpu className="w-4 h-4 text-purple-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-foreground">AI Model for Scanning</h3>
+                      <p className="text-xs text-muted-foreground">Select which LLM to use for ATS analysis</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {configs.length === 0 ? (
+                      <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+                        <div className="flex items-start gap-3">
+                          <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-sm font-semibold text-amber-900 dark:text-amber-400">No LLM configurations found</p>
+                            <p className="text-xs text-amber-700 dark:text-amber-500 mt-1">
+                              Add an LLM API configuration in the "LLM API" tab to enable AI-powered scanning.
+                            </p>
+                            <button
+                              onClick={() => setActiveTab('llm')}
+                              className="mt-2 text-xs font-bold text-amber-700 dark:text-amber-400 hover:text-amber-800 underline"
+                            >
+                              Go to LLM API settings →
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {configs.map((config) => (
+                          <label
+                            key={config.id}
+                            className={`flex items-center justify-between p-4 rounded-xl cursor-pointer transition-all border-2 ${
+                              settings.selectedLLMConfigId === config.id
+                                ? 'bg-gradient-to-br from-brand-50/50 to-purple-50/50 dark:from-brand-900/20 dark:to-purple-900/20 border-brand-300 shadow-md'
+                                : 'bg-muted/50 hover:bg-muted border-border hover:border-brand-300/50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-4">
+                              <div className={`p-2 rounded-lg ${
+                                settings.selectedLLMConfigId === config.id
+                                  ? 'bg-brand-100 dark:bg-brand-900/40'
+                                  : 'bg-background border border-border'
+                              }`}>
+                                <Cpu className={`w-4 h-4 ${
+                                  settings.selectedLLMConfigId === config.id
+                                    ? 'text-brand-600'
+                                    : 'text-muted-foreground'
+                                }`} />
                               </div>
-                              {option.metadata && (
-                                <div className="text-right shrink-0">
-                                  <p className="text-xs font-medium text-slate-600">
-                                    {option.metadata.context_length.toLocaleString()} ctx
-                                  </p>
-                                  <p className="text-xs text-slate-400 mt-0.5">
-                                    ${option.metadata.pricing.prompt}/1K
-                                  </p>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <p className="text-sm font-bold text-foreground">{config.name}</p>
+                                  {config.isActive && (
+                                    <span className="px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 text-[9px] font-black rounded uppercase">
+                                      Active
+                                    </span>
+                                  )}
+                                  {!config.isActive && (
+                                    <span className="px-1.5 py-0.5 bg-muted text-muted-foreground text-[9px] font-black rounded uppercase">
+                                      Inactive
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  {config.provider} • {config.model}
+                                </p>
+                              </div>
+                            </div>
+                            <input
+                              type="radio"
+                              name="selectedLLMConfig"
+                              checked={settings.selectedLLMConfigId === config.id}
+                              onChange={() => onSettingsChange({ selectedLLMConfigId: config.id })}
+                              className="w-5 h-5 text-brand-600 focus:ring-brand-500 bg-background"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="llm"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="p-8 space-y-6"
+              >
+                {/* Header with Add Button */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 bg-gradient-to-br from-brand-100 to-purple-100 dark:from-brand-900/30 dark:to-purple-900/30 rounded-xl">
+                      <Cpu className="w-5 h-5 text-brand-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-foreground">API Configurations</h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {configs.length === 0 
+                          ? 'No configurations yet' 
+                          : `${configs.length} configuration${configs.length > 1 ? 's' : ''} • ${configs.filter(c => c.isActive).length} active`
+                        }
+                      </p>
+                    </div>
+                  </div>
+                  {!showAddForm && (
+                    <motion.button
+                      onClick={() => setShowAddForm(true)}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      className="px-5 py-2.5 bg-gradient-to-r from-brand-600 to-brand-500 text-white text-sm font-bold rounded-xl hover:shadow-lg transition-all flex items-center gap-2"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      Add Configuration
+                    </motion.button>
+                  )}
+                </div>
+
+                {/* Add Form */}
+                <AnimatePresence>
+                  {showAddForm && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="p-6 bg-gradient-to-br from-muted/50 to-brand-50/10 dark:to-brand-900/10 border-2 border-brand-200 dark:border-brand-900 rounded-2xl space-y-5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-brand-600 rounded-lg">
+                              <Sparkles className="w-4 h-4 text-white" />
+                            </div>
+                            <h4 className="text-base font-bold text-foreground">New API Configuration</h4>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setShowAddForm(false);
+                              setFormError('');
+                              setFormSuccess('');
+                              setTestResult(null);
+                            }}
+                            className="text-xs text-muted-foreground hover:text-foreground font-semibold px-3 py-1.5 hover:bg-background/50 rounded-lg transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">Configuration Name</label>
+                              <input
+                                type="text"
+                                value={formData.name}
+                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                placeholder="e.g., Production GPT-4"
+                                className="w-full px-4 py-2.5 text-sm bg-background border-2 border-border rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all text-foreground"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">Provider</label>
+                              <select
+                                value={formData.provider}
+                                onChange={(e) => handleProviderChange(e.target.value)}
+                                className="w-full px-4 py-2.5 text-sm bg-background border-2 border-border rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all text-foreground"
+                              >
+                                {LLM_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">Model</label>
+                            <SearchableDropdown
+                              value={formData.model}
+                              onChange={(m) => setFormData({ ...formData, model: m })}
+                              onSearch={handleModelSearch}
+                              loading={fetchingModels}
+                              placeholder="Search and select a model..."
+                              renderOption={(option) => (
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold text-foreground truncate">{option.name}</p>
+                                    {option.id !== option.name && (
+                                      <p className="text-xs text-muted-foreground truncate mt-0.5">{option.id}</p>
+                                    )}
+                                  </div>
+                                  {option.metadata && (
+                                    <div className="text-right shrink-0">
+                                      <p className="text-xs font-medium text-muted-foreground">
+                                        {option.metadata.context_length.toLocaleString()} ctx
+                                      </p>
+                                    </div>
+                                  )}
                                 </div>
                               )}
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">API Key</label>
+                            <div className="relative">
+                              <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                              <input
+                                type="password"
+                                value={formData.apiKey}
+                                onChange={(e) => {
+                                  const newApiKey = e.target.value;
+                                  setFormData({ ...formData, apiKey: newApiKey });
+                                  setTestResult(null);
+                                  if (formData.provider === 'openrouter' && newApiKey.startsWith('sk-or-v1-')) {
+                                    handleFetchOpenRouterModels(newApiKey);
+                                  }
+                                }}
+                                placeholder="sk-..."
+                                className="w-full pl-11 pr-4 py-2.5 text-sm bg-background border-2 border-border rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all font-mono text-foreground"
+                              />
                             </div>
+                            <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1.5">
+                              <Shield className="w-3 h-3" />
+                              Your API key is encrypted and stored securely
+                            </p>
+                          </div>
+
+                          <div className="flex gap-3 pt-2">
+                            <button
+                              type="button"
+                              onClick={handleTestConnection}
+                              disabled={testing || !formData.provider || !formData.model || !formData.apiKey}
+                              className="flex-1 px-4 py-3 bg-background hover:bg-muted border-2 border-border hover:border-muted-foreground/30 text-foreground text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                              Test Connection
+                            </button>
+                            <button
+                              type="submit"
+                              disabled={submitting || !formData.name || !formData.provider || !formData.model || !formData.apiKey}
+                              className="flex-[2] px-4 py-3 bg-gradient-to-r from-brand-600 to-brand-500 hover:shadow-lg text-white text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                              Save Configuration
+                            </button>
+                          </div>
+
+                          {testResult && (
+                            <motion.div
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className={`p-4 rounded-xl text-sm font-medium flex items-start gap-3 ${
+                                testResult.success 
+                                  ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-2 border-emerald-200 dark:border-emerald-800' 
+                                  : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-2 border-amber-200 dark:border-amber-800'
+                              }`}
+                            >
+                              {testResult.success ? <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" /> : <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />}
+                              <div className="flex-1">
+                                <p className="font-bold">{testResult.success ? 'Connection Successful!' : 'Connection Failed'}</p>
+                                <p className="text-xs mt-1 opacity-90">{testResult.message}</p>
+                              </div>
+                            </motion.div>
                           )}
-                        />
-                      ) : (
-                        <select
-                          value={formData.model}
-                          onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-                          className="w-full px-4 py-2.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
-                        >
-                          {availableModels.map((model) => (
-                            <option key={model} value={model}>
-                              {model}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                      
-                      {formData.provider === 'openrouter' && openRouterModels.length === 0 && !fetchingModels && (
-                        <p className="text-xs text-slate-500 mt-1.5">
-                          Enter your API key to load available models
-                        </p>
-                      )}
-                      
-                      {fetchingModels && (
-                        <div className="flex items-center gap-2 mt-2 text-xs text-brand-600">
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                          Loading models...
-                        </div>
-                      )}
-                    </div>
 
-                    {/* API Key */}
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-2">
-                        API Key
-                      </label>
-                      <div className="relative">
-                        <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                        <input
-                          type="password"
-                          value={formData.apiKey}
-                          onChange={(e) => {
-                            const newApiKey = e.target.value;
-                            setFormData({ ...formData, apiKey: newApiKey });
-                            setTestResult(null); // Clear test result when API key changes
-                            
-                            // Auto-fetch OpenRouter models when API key is entered
-                            if (formData.provider === 'openrouter' && newApiKey.startsWith('sk-or-v1-')) {
-                              handleFetchOpenRouterModels(newApiKey);
-                            }
-                          }}
-                          placeholder="sk-..."
-                          className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
-                        />
-                      </div>
-                      <p className="text-xs text-slate-500 mt-1.5">Your API key is encrypted and stored securely</p>
-                    </div>
-
-                    {/* Test Connection Button */}
-                    <button
-                      type="button"
-                      onClick={handleTestConnection}
-                      disabled={testing || !formData.provider || !formData.model || !formData.apiKey}
-                      className="w-full px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                      {testing ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Testing Connection...
-                        </>
-                      ) : (
-                        <>
-                          <Zap className="w-4 h-4" />
-                          Test Connection
-                        </>
-                      )}
-                    </button>
-
-                    {/* Test Result */}
-                    {testResult && (
-                      <div className={`flex items-center gap-2 p-3 border rounded-lg ${
-                        testResult.success
-                          ? 'bg-green-50 border-green-200'
-                          : 'bg-amber-50 border-amber-200'
-                      }`}>
-                        {testResult.success ? (
-                          <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
-                        ) : (
-                          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                        )}
-                        <p className={`text-xs ${
-                          testResult.success ? 'text-green-700' : 'text-amber-700'
-                        }`}>
-                          {testResult.message}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Active Status */}
-                    <label className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.isActive}
-                        onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                        className="w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                      />
-                      <div>
-                        <p className="text-sm font-semibold text-slate-700">Set as Active</p>
-                        <p className="text-xs text-slate-500">Use this configuration for ATS scanning</p>
-                      </div>
-                    </label>
-
-                    {/* Error/Success Messages */}
-                    {formError && (
-                      <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-                        <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-                        <p className="text-xs text-red-700">{formError}</p>
-                      </div>
-                    )}
-
-                    {formSuccess && (
-                      <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
-                        <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
-                        <p className="text-xs text-green-700">{formSuccess}</p>
-                      </div>
-                    )}
-
-                    {/* Submit Button */}
-                    <button
-                      type="submit"
-                      disabled={submitting}
-                      className="w-full btn-primary flex items-center justify-center gap-2"
-                    >
-                      {submitting ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Saving...
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 className="w-4 h-4" />
-                          Save Configuration
-                        </>
-                      )}
-                    </button>
-                  </form>
-                </div>
-              )}
-
-              {/* Existing Configs */}
-              <div className="space-y-4">
-                <h3 className="text-base font-bold text-slate-900">Saved Configurations</h3>
-                
-                {loading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="w-6 h-6 text-brand-600 animate-spin" />
-                  </div>
-                ) : configs.length === 0 ? (
-                  <div className="text-center py-12">
-                    <Cpu className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                    <p className="text-sm text-slate-500">No configurations yet</p>
-                    <p className="text-xs text-slate-400 mt-1">Add your first LLM API configuration to get started</p>
-                  </div>
-                ) : (
-                  configs.map((config) => (
-                    <div
-                      key={config.id}
-                      className="glass-card p-5 flex items-center justify-between hover:shadow-lg transition-all"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <h4 className="text-base font-bold text-slate-800">{config.name}</h4>
-                          {config.isActive && (
-                            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold rounded-full">
-                              ACTIVE
-                            </span>
+                          {formError && (
+                            <motion.div
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="p-4 rounded-xl text-sm font-medium flex items-start gap-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-2 border-red-200 dark:border-red-800"
+                            >
+                              <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                              <div>
+                                <p className="font-bold">Error</p>
+                                <p className="text-xs mt-1 opacity-90">{formError}</p>
+                              </div>
+                            </motion.div>
                           )}
-                        </div>
-                        <div className="flex items-center gap-3 text-sm text-slate-500">
-                          <span className="font-medium">{LLM_PROVIDERS.find(p => p.value === config.provider)?.label}</span>
-                          <span>•</span>
-                          <span>{config.model}</span>
-                        </div>
-                      </div>
 
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={() => handleToggleActive(config.id, config.isActive)}
-                          className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
+                          {formSuccess && (
+                            <motion.div
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="p-4 rounded-xl text-sm font-medium flex items-center gap-3 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-2 border-emerald-200 dark:border-emerald-800"
+                            >
+                              <CheckCircle2 className="w-5 h-5" />
+                              {formSuccess}
+                            </motion.div>
+                          )}
+                        </form>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Configs List */}
+                <div className="space-y-3">
+                  {loading ? (
+                    <div className="flex justify-center py-16">
+                      <div className="text-center">
+                        <Loader2 className="w-8 h-8 text-brand-600 animate-spin mx-auto mb-3" />
+                        <p className="text-sm text-muted-foreground">Loading configurations...</p>
+                      </div>
+                    </div>
+                  ) : configs.length === 0 ? (
+                    <div className="text-center py-16 bg-gradient-to-br from-muted/50 to-background rounded-2xl border-2 border-dashed border-border">
+                      <div className="p-5 bg-muted rounded-2xl w-fit mx-auto mb-4 shadow-sm">
+                        <Cpu className="w-10 h-10 text-muted-foreground/30" />
+                      </div>
+                      <h4 className="text-base font-bold text-foreground mb-2">No API Configurations</h4>
+                      <p className="text-sm text-muted-foreground px-8 mb-6 max-w-md mx-auto">
+                        Add your first AI provider configuration to start using AI-powered resume analysis
+                      </p>
+                      <button
+                        onClick={() => setShowAddForm(true)}
+                        className="px-6 py-3 bg-gradient-to-r from-brand-600 to-brand-500 text-white text-sm font-bold rounded-xl hover:shadow-lg transition-all inline-flex items-center gap-2"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        Add Your First Configuration
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid gap-3">
+                      {configs.map((config, idx) => (
+                        <motion.div
+                          key={config.id}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: idx * 0.05 }}
+                          className={`group relative flex items-center justify-between p-5 rounded-2xl border-2 transition-all ${
                             config.isActive
-                              ? 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                              : 'bg-brand-100 text-brand-700 hover:bg-brand-200'
+                              ? 'bg-gradient-to-br from-background to-brand-50/10 dark:to-brand-900/10 border-brand-200 dark:border-brand-900/50 hover:border-brand-300 hover:shadow-lg'
+                              : 'bg-background border-border hover:border-muted-foreground/30 hover:shadow-md'
                           }`}
                         >
-                          {config.isActive ? 'Deactivate' : 'Activate'}
-                        </button>
-                        <button
-                          onClick={() => handleDelete(config.id)}
-                          className="p-2.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                        >
-                          <X className="w-5 h-5" />
-                        </button>
-                      </div>
+                          {/* Active Indicator */}
+                          {config.isActive && (
+                            <div className="absolute top-3 right-3">
+                              <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-100 dark:bg-emerald-900/40 rounded-full">
+                                <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                                <span className="text-[9px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-tight">Active</span>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex items-center gap-4 flex-1 min-w-0 pr-4">
+                            <div className={`p-3.5 rounded-xl border-2 ${
+                              config.isActive 
+                                ? 'bg-gradient-to-br from-brand-100 to-purple-100 dark:from-brand-900/40 dark:to-purple-900/40 border-brand-200 dark:border-brand-900/50' 
+                                : 'bg-muted/30 border-border'
+                            }`}>
+                              <Cpu className={`w-6 h-6 ${config.isActive ? 'text-brand-600' : 'text-muted-foreground'}`} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h4 className="text-base font-bold text-foreground truncate mb-1">{config.name}</h4>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="px-2 py-0.5 bg-muted text-muted-foreground text-xs font-semibold rounded-md">
+                                  {LLM_PROVIDERS.find(p => p.value === config.provider)?.label || config.provider}
+                                </span>
+                                <span className="text-muted-foreground/30">•</span>
+                                <span className="text-xs text-muted-foreground font-medium truncate max-w-[200px]">{config.model}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleToggleActive(config.id, config.isActive)}
+                              className={`p-2.5 rounded-lg transition-all ${
+                                config.isActive 
+                                  ? 'text-muted-foreground hover:text-foreground hover:bg-muted' 
+                                  : 'text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600'
+                              }`}
+                              title={config.isActive ? "Deactivate" : "Activate"}
+                            >
+                              <Power className="w-4.5 h-4.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(config.id)}
+                              className="p-2.5 text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-4.5 h-4.5" />
+                            </button>
+                          </div>
+                        </motion.div>
+                      ))}
                     </div>
-                  ))
-                )}
-              </div>
-            </>
-          )}
+                  )}
+                </div>
+              </motion.div>
 
+            )}
+          </AnimatePresence>
         </div>
-
-        {/* Footer */}
-        <div className="px-8 py-5 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-6 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
-          >
-            Close
-          </button>
-        </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

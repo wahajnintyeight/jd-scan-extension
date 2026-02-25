@@ -5,12 +5,22 @@
 import { getSessionHeaders } from './session';
 
 // Get API base URL from environment or use default
-const getApiBaseUrl = () => {
-  // Try to get from import.meta.env (Vite)
-  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL;
+const getApiBaseUrl = (): string => {
+  // Try to get from import.meta.env (Vite/WXT)
+  try {
+    if (import.meta?.env?.VITE_API_BASE_URL) {
+      const url = import.meta.env.VITE_API_BASE_URL;
+      // Ensure it's an absolute URL
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        return url;
+      }
+    }
+  } catch (e) {
+    // import.meta might not be available in all contexts
+    console.warn('[API] Failed to access import.meta.env:', e);
   }
-  // Fallback to default
+  
+  // Fallback to default - ensure it's an absolute URL
   return 'http://localhost:8881/v2/api';
 };
 
@@ -18,6 +28,11 @@ const API_BASE_URL = getApiBaseUrl();
 
 // Debug log to verify API URL is set correctly
 console.log('[API] Base URL:', API_BASE_URL);
+
+// Validate that we have a proper URL
+if (!API_BASE_URL.startsWith('http://') && !API_BASE_URL.startsWith('https://')) {
+  console.error('[API] Invalid API base URL - must be absolute:', API_BASE_URL);
+}
 
 export interface LLMProvider {
   value: string;
@@ -61,6 +76,19 @@ export const LLM_PROVIDERS: LLMProvider[] = [
   },
 ];
 
+// API Response wrapper interface
+export interface ApiResponse<T = any> {
+  code: number;
+  message: string;
+  result: T;
+}
+
+// Success codes enum
+export enum ApiSuccessCode {
+  DATA_FETCHED = 1009,
+  OPERATION_SUCCESS = 1022,
+}
+
 export interface LLMAPIConfig {
   id: string;
   name: string;
@@ -80,6 +108,51 @@ export interface CreateLLMConfigRequest {
   isActive: boolean;
 }
 
+export interface OpenRouterModel {
+  id: string;
+  name: string;
+  created: number;
+  context_length: number;
+  pricing: {
+    prompt: string;
+    completion: string;
+    request: string;
+    image: string;
+  };
+  architecture: {
+    modality: string;
+    input_modalities: string[];
+    output_modalities: string[];
+    tokenizer: string;
+    instruct_type: string;
+  };
+  description: string;
+}
+
+export interface FetchModelsResult {
+  count: number;
+  models: OpenRouterModel[];
+}
+
+export interface TestConnectionResult {
+  success: boolean;
+  message: string;
+  model?: string;
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  error?: string;
+}
+
+/**
+ * Check if API response is successful
+ */
+function isSuccessResponse(code: number): boolean {
+  return code === ApiSuccessCode.DATA_FETCHED || code === ApiSuccessCode.OPERATION_SUCCESS;
+}
+
 /**
  * Fetch all LLM API configurations
  */
@@ -89,10 +162,11 @@ export async function fetchLLMConfigs(): Promise<LLMAPIConfig[]> {
     const response = await fetch(`${API_BASE_URL}/llm-api-configs`, {
       headers,
     });
-    const data = await response.json();
+    const data: ApiResponse<LLMAPIConfig[] | null> = await response.json();
     
-    if (data.code === 1022 && data.result) {
-      return data.result;
+    if (isSuccessResponse(data.code)) {
+      // Handle null result (no configs yet) by returning empty array
+      return data.result || [];
     }
     return [];
   } catch (error) {
@@ -113,13 +187,13 @@ export async function createLLMConfig(config: CreateLLMConfigRequest): Promise<{
       body: JSON.stringify(config),
     });
     
-    const data = await response.json();
+    const data: ApiResponse<LLMAPIConfig> = await response.json();
     
-    if (data.code === 1022 && data.result) {
+    if (isSuccessResponse(data.code) && data.result) {
       return { success: true, data: data.result };
     }
     
-    return { success: false, error: data.result || 'Failed to create configuration' };
+    return { success: false, error: data.message || 'Failed to create configuration' };
   } catch (error) {
     console.error('Failed to create LLM config:', error);
     return { success: false, error: 'Network error' };
@@ -138,13 +212,13 @@ export async function updateLLMConfig(id: string, config: Partial<CreateLLMConfi
       body: JSON.stringify(config),
     });
     
-    const data = await response.json();
+    const data: ApiResponse = await response.json();
     
-    if (data.code === 1022) {
+    if (isSuccessResponse(data.code)) {
       return { success: true };
     }
     
-    return { success: false, error: data.result || 'Failed to update configuration' };
+    return { success: false, error: data.message || 'Failed to update configuration' };
   } catch (error) {
     console.error('Failed to update LLM config:', error);
     return { success: false, error: 'Network error' };
@@ -162,13 +236,13 @@ export async function deleteLLMConfig(id: string): Promise<{ success: boolean; e
       headers,
     });
     
-    const data = await response.json();
+    const data: ApiResponse = await response.json();
     
-    if (data.code === 1022) {
+    if (isSuccessResponse(data.code)) {
       return { success: true };
     }
     
-    return { success: false, error: 'Failed to delete configuration' };
+    return { success: false, error: data.message || 'Failed to delete configuration' };
   } catch (error) {
     console.error('Failed to delete LLM config:', error);
     return { success: false, error: 'Network error' };
@@ -178,7 +252,7 @@ export async function deleteLLMConfig(id: string): Promise<{ success: boolean; e
 /**
  * Test LLM API connection
  */
-export async function testLLMConnection(provider: string, model: string, apiKey: string): Promise<{ success: boolean; message: string; error?: string }> {
+export async function testLLMConnection(provider: string, model: string, apiKey: string): Promise<{ success: boolean; message: string; error?: string; usage?: any }> {
   try {
     const headers = await getSessionHeaders();
     const response = await fetch(`${API_BASE_URL}/gollm/test-connection`, {
@@ -191,20 +265,21 @@ export async function testLLMConnection(provider: string, model: string, apiKey:
       }),
     });
     
-    const data = await response.json();
+    const data: ApiResponse<TestConnectionResult> = await response.json();
     
-    if (data.code === 1022 && data.result) {
+    if (isSuccessResponse(data.code) && data.result) {
       return {
         success: data.result.success || false,
         message: data.result.message || 'Connection test completed',
         error: data.result.error,
+        usage: data.result.usage,
       };
     }
     
     return {
       success: false,
-      message: 'Connection test failed',
-      error: data.result || 'Unknown error',
+      message: data.message || 'Connection test failed',
+      error: typeof data.result === 'string' ? data.result : 'Unknown error',
     };
   } catch (error) {
     console.error('Failed to test LLM connection:', error);
@@ -227,25 +302,34 @@ export function getModelsForProvider(provider: string): string[] {
 /**
  * Scan resume against job description using ATS
  */
-export async function scanResumeATS(resumeContent: string, jobDescription: string): Promise<{ success: boolean; data?: any; error?: string }> {
+export async function scanResumeATS(
+  apiId: string,
+  resumeContent: string, 
+  jobDescription: string,
+  temperature?: number,
+  maxTokens?: number
+): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
     const headers = await getSessionHeaders();
     const response = await fetch(`${API_BASE_URL}/gollm/ats/scan`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        resume: resumeContent,
-        jobDescription: jobDescription,
+        api_id: apiId,
+        resume_text: resumeContent,
+        job_description: jobDescription,
+        temperature: temperature || 0.7,
+        maxTokens: maxTokens || 2000,
       }),
     });
     
-    const data = await response.json();
+    const data: ApiResponse = await response.json();
     
-    if (data.code === 1022 && data.result) {
+    if (isSuccessResponse(data.code) && data.result) {
       return { success: true, data: data.result };
     }
     
-    return { success: false, error: data.result || 'Failed to scan resume' };
+    return { success: false, error: data.message || 'Failed to scan resume' };
   } catch (error) {
     console.error('Failed to scan resume:', error);
     return { success: false, error: 'Network error' };
@@ -255,7 +339,7 @@ export async function scanResumeATS(resumeContent: string, jobDescription: strin
 /**
  * Fetch available models from OpenRouter
  */
-export async function fetchOpenRouterModels(apiKey: string): Promise<{ success: boolean; models?: any[]; error?: string }> {
+export async function fetchOpenRouterModels(apiKey: string): Promise<{ success: boolean; models?: OpenRouterModel[]; count?: number; error?: string }> {
   try {
     const headers = await getSessionHeaders();
     const response = await fetch(`${API_BASE_URL}/gollm/fetch-models`, {
@@ -267,16 +351,20 @@ export async function fetchOpenRouterModels(apiKey: string): Promise<{ success: 
       }),
     });
     
-    const data = await response.json();
+    const data: ApiResponse<FetchModelsResult> = await response.json();
     
-    if (data.code === 1022 && data.result) {
+    if (isSuccessResponse(data.code) && data.result) {
       return { 
         success: true, 
-        models: data.result.models || [] 
+        models: data.result.models || [],
+        count: data.result.count || 0
       };
     }
     
-    return { success: false, error: data.result || 'Failed to fetch models' };
+    return { 
+      success: false, 
+      error: data.message || (typeof data.result === 'string' ? data.result : 'Failed to fetch models')
+    };
   } catch (error) {
     console.error('Failed to fetch OpenRouter models:', error);
     return { success: false, error: 'Network error' };

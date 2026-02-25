@@ -3,14 +3,124 @@
 @tailwind utilities;
 
 @layer base {
+    :root {
+        /* Solar Dusk Theme - Light Mode */
+        --background: 253 251 247;
+        --foreground: 74 59 51;
+        --card: 248 244 238;
+        --card-foreground: 74 59 51;
+        --popover: 248 244 238;
+        --popover-foreground: 74 59 51;
+        --primary: 180 83 9;
+        --primary-foreground: 255 255 255;
+        --secondary: 228 192 144;
+        --secondary-foreground: 87 83 78;
+        --muted: 241 233 218;
+        --muted-foreground: 120 113 108;
+        --accent: 242 218 186;
+        --accent-foreground: 87 83 78;
+        --destructive: 153 27 27;
+        --destructive-foreground: 255 255 255;
+        --border: 228 217 188;
+        --input: 228 217 188;
+        --ring: 180 83 9;
+        --chart-1: 180 83 9;
+        --chart-2: 120 113 108;
+        --chart-3: 161 98 7;
+        --chart-4: 120 113 108;
+        --chart-5: 202 138 4;
+        --sidebar: 241 233 218;
+        --sidebar-foreground: 74 59 51;
+        --sidebar-primary: 180 83 9;
+        --sidebar-primary-foreground: 255 255 255;
+        --sidebar-accent: 161 98 7;
+        --sidebar-accent-foreground: 255 255 255;
+        --sidebar-border: 228 217 188;
+        --sidebar-ring: 180 83 9;
+        --font-sans: Oxanium, sans-serif;
+        --font-serif: Merriweather, serif;
+        --font-mono: Fira Code, monospace;
+        --radius: 0.3rem;
+        --shadow-x: 0px;
+        --shadow-y: 2px;
+        --shadow-blur: 3px;
+        --shadow-spread: 0px;
+        --shadow-opacity: 0.18;
+        --shadow-color: hsl(28 18% 25%);
+        --shadow-2xs: 0px 2px 3px 0px hsl(28 18% 25% / 0.09);
+        --shadow-xs: 0px 2px 3px 0px hsl(28 18% 25% / 0.09);
+        --shadow-sm: 0px 2px 3px 0px hsl(28 18% 25% / 0.18), 0px 1px 2px -1px hsl(28 18% 25% / 0.18);
+        --shadow: 0px 2px 3px 0px hsl(28 18% 25% / 0.18), 0px 1px 2px -1px hsl(28 18% 25% / 0.18);
+        --shadow-md: 0px 2px 3px 0px hsl(28 18% 25% / 0.18), 0px 2px 4px -1px hsl(28 18% 25% / 0.18);
+        --shadow-lg: 0px 2px 3px 0px hsl(28 18% 25% / 0.18), 0px 4px 6px -1px hsl(28 18% 25% / 0.18);
+        --shadow-xl: 0px 2px 3px 0px hsl(28 18% 25% / 0.18), 0px 8px 10px -1px hsl(28 18% 25% / 0.18);
+        --shadow-2xl: 0px 2px 3px 0px hsl(28 18% 25% / 0.45);
+        --tracking-normal: 0em;
+        --spacing: 0.25rem;
+    }
+
+    .dark {
+        /* Solar Dusk Theme - Dark Mode */
+        --background: 28 25 23;
+        --foreground: 245 245 244;
+        --card: 41 37 36;
+        --card-foreground: 245 245 244;
+        --popover: 41 37 36;
+        --popover-foreground: 245 245 244;
+        --primary: 249 115 22;
+        --primary-foreground: 255 255 255;
+        --secondary: 87 83 78;
+        --secondary-foreground: 231 229 228;
+        --muted: 32 29 26;
+        --muted-foreground: 168 162 158;
+        --accent: 30 66 82;
+        --accent-foreground: 231 229 228;
+        --destructive: 220 38 38;
+        --destructive-foreground: 255 255 255;
+        --border: 68 64 60;
+        --input: 68 64 60;
+        --ring: 249 115 22;
+        --chart-1: 249 115 22;
+        --chart-2: 14 165 233;
+        --chart-3: 234 179 8;
+        --chart-4: 168 162 158;
+        --chart-5: 120 113 108;
+        --sidebar: 41 37 36;
+        --sidebar-foreground: 245 245 244;
+        --sidebar-primary: 249 115 22;
+        --sidebar-primary-foreground: 255 255 255;
+        --sidebar-accent: 14 165 233;
+        --sidebar-accent-foreground: 12 42 77;
+        --sidebar-border: 68 64 60;
+        --sidebar-ring: 249 115 22;
+
+        --font-sans: Oxanium, sans-serif;
+        --font-serif: Merriweather, serif;
+        --font-mono: Fira Code, monospace;
+        --radius: 0.3rem;
+        --shadow-x: 0px;
+        --shadow-y: 2px;
+        --shadow-blur: 3px;
+        --shadow-spread: 0px;
+        --shadow-opacity: 0.18;
+        --shadow-color: hsl(0 0% 5%);
+        --shadow-2xs: 0px 2px 3px 0px hsl(0 0% 5% / 0.09);
+        --shadow-xs: 0px 2px 3px 0px hsl(0 0% 5% / 0.09);
+        --shadow-sm: 0px 2px 3px 0px hsl(0 0% 5% / 0.18), 0px 1px 2px -1px hsl(0 0% 5% / 0.18);
+        --shadow: 0px 2px 3px 0px hsl(0 0% 5% / 0.18), 0px 1px 2px -1px hsl(0 0% 5% / 0.18);
+        --shadow-md: 0px 2px 3px 0px hsl(0 0% 5% / 0.18), 0px 2px 4px -1px hsl(0 0% 5% / 0.18);
+        --shadow-lg: 0px 2px 3px 0px hsl(0 0% 5% / 0.18), 0px 4px 6px -1px hsl(0 0% 5% / 0.18);
+        --shadow-xl: 0px 2px 3px 0px hsl(0 0% 5% / 0.18), 0px 8px 10px -1px hsl(0 0% 5% / 0.18);
+        --shadow-2xl: 0px 2px 3px 0px hsl(0 0% 5% / 0.45);
+    }
+
     * {
-        border-color: theme('colors.slate.200');
+        @apply border-border;
     }
 
     body {
+        @apply bg-background text-foreground;
         font-family: 'Inter', system-ui, -apple-system, sans-serif;
-        background-color: theme('colors.slate.50');
-        color: theme('colors.slate.900');
     }
 
     .font-display {
@@ -20,7 +130,9 @@
 
 @layer components {
     .glass-card {
-        @apply bg-white/70 backdrop-blur-md border border-white/20 shadow-premium rounded-2xl transition-all duration-300;
+        @apply bg-card backdrop-blur-md border shadow-premium rounded-2xl transition-all duration-300;
+        background-color: rgb(var(--card) / 0.7);
+        border-color: rgb(var(--border) / 0.5);
     }
 
     .glass-card-hover {
@@ -32,7 +144,14 @@
     }
 
     .btn-secondary {
-        @apply px-4 py-2 bg-white/50 hover:bg-white text-gray-700 font-medium rounded-xl border border-gray-200 transition-all duration-300 active:scale-[0.98];
+        @apply px-4 py-2 font-medium rounded-xl border transition-all duration-300 active:scale-[0.98];
+        background-color: rgb(var(--card) / 0.5);
+        color: rgb(var(--foreground));
+        border-color: rgb(var(--border));
+    }
+    
+    .btn-secondary:hover {
+        background-color: rgb(var(--card));
     }
 
     .premium-scrollbar {

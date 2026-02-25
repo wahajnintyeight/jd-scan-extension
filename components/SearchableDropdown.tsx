@@ -36,7 +36,7 @@ export default function SearchableDropdown({
   const [options, setOptions] = useState<DropdownOption[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const debounceTimerRef = useRef<NodeJS.Timeout>();
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -86,19 +86,21 @@ export default function SearchableDropdown({
     setIsOpen(false);
   };
 
-  const displayValue = value || searchQuery;
+  // When dropdown is open and user is searching, show search query
+  // When closed, show the selected value
+  const displayValue = isOpen ? searchQuery : value;
 
   const defaultRenderOption = (option: DropdownOption) => (
     <div className="flex items-start justify-between gap-2">
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-slate-800 truncate">
+        <p className="text-sm font-semibold text-foreground truncate">
           {option.name}
         </p>
-        <p className="text-xs text-slate-500 truncate mt-0.5">
+        <p className="text-xs text-muted-foreground truncate mt-0.5">
           {option.id}
         </p>
         {option.description && (
-          <p className="text-xs text-slate-400 line-clamp-1 mt-1">
+          <p className="text-xs text-muted-foreground/60 line-clamp-1 mt-1">
             {option.description}
           </p>
         )}
@@ -109,7 +111,7 @@ export default function SearchableDropdown({
   return (
     <div ref={containerRef} className={`relative ${className}`}>
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
         <input
           type="text"
           value={displayValue}
@@ -120,27 +122,27 @@ export default function SearchableDropdown({
           onFocus={() => setIsOpen(true)}
           placeholder={placeholder}
           disabled={disabled || loading}
-          className="w-full pl-10 pr-10 py-2.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none disabled:bg-slate-100 disabled:cursor-not-allowed"
+          className="w-full pl-10 pr-10 py-2.5 text-sm border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none disabled:bg-muted disabled:cursor-not-allowed"
         />
         <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
           {(loading || isSearching) ? (
-            <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
+            <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" />
           ) : (
-            <ChevronDown className="w-4 h-4 text-slate-400" />
+            <ChevronDown className="w-4 h-4 text-muted-foreground" />
           )}
         </div>
       </div>
 
       {isOpen && !disabled && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+        <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-lg shadow-lg max-h-64 overflow-y-auto">
           {isSearching ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-5 h-5 text-brand-600 animate-spin" />
             </div>
           ) : options.length === 0 ? (
             <div className="px-4 py-8 text-center">
-              <p className="text-sm text-slate-500">No results found</p>
-              <p className="text-xs text-slate-400 mt-1">
+              <p className="text-sm text-muted-foreground">No results found</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">
                 {searchQuery ? 'Try a different search term' : 'Start typing to search'}
               </p>
             </div>
@@ -150,7 +152,7 @@ export default function SearchableDropdown({
                 key={option.id}
                 type="button"
                 onClick={() => handleSelect(option.id)}
-                className="w-full px-4 py-3 text-left hover:bg-brand-50 transition-colors border-b border-slate-100 last:border-b-0"
+                className="w-full px-4 py-3 text-left hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-colors border-b border-border/50 last:border-b-0"
               >
                 {renderOption ? renderOption(option) : defaultRenderOption(option)}
               </button>
@@ -160,4 +162,5 @@ export default function SearchableDropdown({
       )}
     </div>
   );
+
 }

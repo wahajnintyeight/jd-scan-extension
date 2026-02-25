@@ -12,6 +12,17 @@ export default defineConfig({
       '*://*.wellfound.com/*',
       '*://*.indeed.co.uk/*',
       '*://*.indeed.ca/*',
+      '*://*.pracuj.pl/*',
     ],
+    side_panel: {
+      default_path: 'sidepanel.html',
+    },
   },
+  vite: () => ({
+    define: {
+      'import.meta.env.VITE_API_BASE_URL': JSON.stringify(
+        process.env.VITE_API_BASE_URL || 'http://localhost:8881/v2/api'
+      ),
+    },
+  }),
 });

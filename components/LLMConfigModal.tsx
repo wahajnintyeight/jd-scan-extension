@@ -82,7 +82,11 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
   // Search handler for SearchableDropdown
   const handleModelSearch = async (query: string): Promise<DropdownOption[]> => {
     // For OpenRouter, use fetched models
-    if (formData.provider === 'openrouter' && openRouterModels.length > 0) {
+    if (formData.provider === 'openrouter') {
+      if (openRouterModels.length === 0) {
+        return [];
+      }
+
       const filtered = openRouterModels.filter(model =>
         model.name.toLowerCase().includes(query.toLowerCase()) ||
         model.id.toLowerCase().includes(query.toLowerCase())
@@ -220,7 +224,7 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
               <form onSubmit={handleSubmit} className="space-y-4">
                 {/* Name */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-2">
+                  <label className="block text-base font-semibold text-slate-700 mb-2">
                     Configuration Name
                   </label>
                   <input
@@ -228,19 +232,19 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     placeholder="e.g., OpenAI GPT-4 Production"
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                    className="w-full px-4 py-3 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
                   />
                 </div>
 
                 {/* Provider */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-2">
+                  <label className="block text-base font-semibold text-slate-700 mb-2">
                     Provider
                   </label>
                   <select
                     value={formData.provider}
                     onChange={(e) => handleProviderChange(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                    className="w-full px-4 py-3 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
                   >
                     {LLM_PROVIDERS.map((provider) => (
                       <option key={provider.value} value={provider.value}>
@@ -252,7 +256,7 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
 
                 {/* Model */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-2">
+                  <label className="block text-base font-semibold text-slate-700 mb-2">
                     Model
                   </label>
                   
@@ -294,26 +298,26 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
                   />
                   
                   {formData.provider === 'openrouter' && openRouterModels.length === 0 && !fetchingModels && (
-                    <p className="text-xs text-slate-500 mt-1.5">
-                      Enter your API key to load available models
+                    <p className="text-sm text-slate-500 mt-2">
+                      Enter your OpenRouter API key below to load available models
                     </p>
                   )}
                   
                   {fetchingModels && (
-                    <div className="flex items-center gap-2 mt-2 text-xs text-brand-600">
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      Loading models...
+                    <div className="flex items-center gap-2 mt-2 text-sm text-brand-600">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Loading OpenRouter models...
                     </div>
                   )}
                 </div>
 
                 {/* API Key */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-2">
+                  <label className="block text-base font-semibold text-slate-700 mb-2">
                     API Key
                   </label>
                   <div className="relative">
-                    <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                     <input
                       type="password"
                       value={formData.apiKey}
@@ -327,38 +331,38 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
                         }
                       }}
                       placeholder="sk-..."
-                      className="w-full pl-10 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                      className="w-full pl-12 pr-4 py-3 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
                     />
                   </div>
-                  <p className="text-xs text-slate-500 mt-1">Your API key is encrypted and stored securely</p>
+                  <p className="text-sm text-slate-500 mt-2">Your API key is encrypted and stored securely</p>
                 </div>
 
                 {/* Active Status */}
-                <label className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg cursor-pointer">
+                <label className="flex items-center gap-4 p-4 bg-slate-50 rounded-lg cursor-pointer">
                   <input
                     type="checkbox"
                     checked={formData.isActive}
                     onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                    className="w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                    className="w-5 h-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                   />
                   <div>
-                    <p className="text-sm font-semibold text-slate-700">Set as Active</p>
-                    <p className="text-xs text-slate-500">Use this configuration for ATS scanning</p>
+                    <p className="text-base font-semibold text-slate-700">Set as Active</p>
+                    <p className="text-sm text-slate-500 mt-0.5">Use this configuration for ATS scanning</p>
                   </div>
                 </label>
 
                 {/* Error/Success Messages */}
                 {formError && (
-                  <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-                    <p className="text-xs text-red-700">{formError}</p>
+                  <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
+                    <p className="text-sm text-red-700">{formError}</p>
                   </div>
                 )}
 
                 {formSuccess && (
-                  <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
-                    <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
-                    <p className="text-xs text-green-700">{formSuccess}</p>
+                  <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
+                    <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
+                    <p className="text-sm text-green-700">{formSuccess}</p>
                   </div>
                 )}
 
@@ -366,16 +370,16 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="w-full btn-primary flex items-center justify-center gap-2"
+                  className="w-full btn-primary flex items-center justify-center gap-2 text-base py-3"
                 >
                   {submitting ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <Loader2 className="w-5 h-5 animate-spin" />
                       Saving...
                     </>
                   ) : (
                     <>
-                      <CheckCircle2 className="w-4 h-4" />
+                      <CheckCircle2 className="w-5 h-5" />
                       Save Configuration
                     </>
                   )}

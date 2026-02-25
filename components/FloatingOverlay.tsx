@@ -64,7 +64,8 @@ export default function FloatingOverlay({ onClose, children, initialX, initialY 
         borderRadius: 16,
         overflow: 'hidden',
         boxShadow: '0 20px 60px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.06)',
-        background: '#f8fafc',
+        background: 'var(--background)',
+        color: 'var(--foreground)',
         fontFamily: 'system-ui, -apple-system, sans-serif',
         userSelect: dragging.current ? 'none' : 'auto',
       }}
