@@ -3,37 +3,10 @@
  * Handles session creation, storage, and validation
  */
 
-// Get API base URL from environment or use default
-const getApiBaseUrl = (): string => {
-  // Try to get from import.meta.env (Vite/WXT)
-  try {
-    if (import.meta?.env?.VITE_API_BASE_URL) {
-      const url = import.meta.env.VITE_API_BASE_URL;
-      // Ensure it's an absolute URL
-      if (url.startsWith('http://') || url.startsWith('https://')) {
-        return url;
-      }
-    }
-  } catch (e) {
-    // import.meta might not be available in all contexts
-    console.warn('[Session] Failed to access import.meta.env:', e);
-  }
-  
-  // Fallback to default - ensure it's an absolute URL
-  return 'http://localhost:8881/v2/api';
-};
+import { API_BASE_URL, apiFetch } from './apiTransport';
 
-const API_BASE_URL = getApiBaseUrl();
 const SESSION_STORAGE_KEY = 'jd_scan_session';
 const SESSION_EXPIRY_HOURS = 1;
-
-// Debug log to verify API URL is set correctly
-console.log('[Session] Base URL:', API_BASE_URL);
-
-// Validate that we have a proper URL
-if (!API_BASE_URL.startsWith('http://') && !API_BASE_URL.startsWith('https://')) {
-  console.error('[Session] Invalid API base URL - must be absolute:', API_BASE_URL);
-}
 
 interface SessionData {
   sessionId: string;
@@ -46,7 +19,7 @@ interface SessionData {
  */
 async function createSession(): Promise<string | null> {
   try {
-    const response = await fetch(`${API_BASE_URL}/createSession`, {
+    const response = await apiFetch(`${API_BASE_URL}/createSession`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -76,21 +49,16 @@ async function createSession(): Promise<string | null> {
 }
 
 /**
- * Get stored session data from localStorage
+ * Get stored session data from extension storage, isolated from host websites.
  */
-function getStoredSession(): SessionData | null {
+async function getStoredSession(): Promise<SessionData | null> {
   try {
-    const stored = localStorage.getItem(SESSION_STORAGE_KEY);
-    if (!stored) return null;
-    
-    const session: SessionData = JSON.parse(stored);
-    
-    // Check if session is expired
-    if (Date.now() > session.expiresAt) {
-      localStorage.removeItem(SESSION_STORAGE_KEY);
+    const data = await chrome.storage.local.get(SESSION_STORAGE_KEY);
+    const session = data[SESSION_STORAGE_KEY] as SessionData | undefined;
+    if (!session || typeof session.sessionId !== 'string' || !Number.isFinite(session.expiresAt) || Date.now() > session.expiresAt) {
+      if (session) await chrome.storage.local.remove(SESSION_STORAGE_KEY);
       return null;
     }
-    
     return session;
   } catch (error) {
     console.error('Error reading stored session:', error);
@@ -99,9 +67,9 @@ function getStoredSession(): SessionData | null {
 }
 
 /**
- * Store session data in localStorage
+ * Store session data in extension storage.
  */
-function storeSession(sessionId: string): void {
+async function storeSession(sessionId: string): Promise<void> {
   const now = Date.now();
   const sessionData: SessionData = {
     sessionId,
@@ -109,7 +77,7 @@ function storeSession(sessionId: string): void {
     expiresAt: now + (SESSION_EXPIRY_HOURS * 60 * 60 * 1000),
   };
   
-  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionData));
+  await chrome.storage.local.set({ [SESSION_STORAGE_KEY]: sessionData });
 }
 
 /**
@@ -117,7 +85,7 @@ function storeSession(sessionId: string): void {
  */
 export async function getSessionId(): Promise<string | null> {
   // Check for existing valid session
-  const stored = getStoredSession();
+  const stored = await getStoredSession();
   if (stored) {
     return stored.sessionId;
   }
@@ -125,7 +93,7 @@ export async function getSessionId(): Promise<string | null> {
   // Create new session
   const sessionId = await createSession();
   if (sessionId) {
-    storeSession(sessionId);
+    await storeSession(sessionId);
     return sessionId;
   }
   
@@ -135,15 +103,15 @@ export async function getSessionId(): Promise<string | null> {
 /**
  * Clear stored session (logout)
  */
-export function clearSession(): void {
-  localStorage.removeItem(SESSION_STORAGE_KEY);
+export async function clearSession(): Promise<void> {
+  await chrome.storage.local.remove(SESSION_STORAGE_KEY);
 }
 
 /**
  * Check if session is valid
  */
-export function hasValidSession(): boolean {
-  return getStoredSession() !== null;
+export async function hasValidSession(): Promise<boolean> {
+  return (await getStoredSession()) !== null;
 }
 
 /**

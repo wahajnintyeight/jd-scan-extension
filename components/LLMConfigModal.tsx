@@ -169,24 +169,24 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
   const availableModels = getModelsForProvider(formData.provider);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden animate-in max-h-[85vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay/55 animate-in">
+      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden animate-in max-h-[85dvh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-brand-50 to-slate-50">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-brand-500 to-brand-700 rounded-xl flex items-center justify-center">
+            <div className="w-10 h-10 bg-brand-600 rounded-xl flex items-center justify-center">
               <Cpu className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900 font-display">LLM API Configuration</h2>
-              <p className="text-xs text-slate-500">Manage your AI provider settings</p>
+              <h2 className="text-lg font-bold text-foreground font-display">LLM API Configuration</h2>
+              <p className="text-xs text-muted-foreground">Manage your AI provider settings</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-muted rounded-lg transition-colors"
           >
-            <X className="w-5 h-5 text-slate-500" />
+            <X className="w-5 h-5 text-muted-foreground" />
           </button>
         </div>
 
@@ -197,7 +197,7 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
           {!showAddForm && (
             <button
               onClick={() => setShowAddForm(true)}
-              className="w-full p-4 border-2 border-dashed border-brand-300 rounded-xl hover:border-brand-500 hover:bg-brand-50 transition-all flex items-center justify-center gap-2 text-brand-600 font-semibold"
+              className="w-full p-4 border-2 border-dashed border-brand-300 rounded-xl hover:border-brand-500 hover:bg-brand-50 transition-colors flex items-center justify-center gap-2 text-brand-600 font-semibold"
             >
               <Zap className="w-5 h-5" />
               Add New Configuration
@@ -208,14 +208,14 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
           {showAddForm && (
             <div className="glass-card p-6 space-y-4 border-brand-200">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-bold text-slate-900">New Configuration</h3>
+                <h3 className="text-sm font-bold text-foreground">New Configuration</h3>
                 <button
                   onClick={() => {
                     setShowAddForm(false);
                     setFormError('');
                     setFormSuccess('');
                   }}
-                  className="text-xs text-slate-500 hover:text-slate-700"
+                  className="text-xs text-muted-foreground hover:text-foreground"
                 >
                   Cancel
                 </button>
@@ -224,7 +224,7 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
               <form onSubmit={handleSubmit} className="space-y-4">
                 {/* Name */}
                 <div>
-                  <label className="block text-base font-semibold text-slate-700 mb-2">
+                  <label className="block text-base font-semibold text-foreground mb-2">
                     Configuration Name
                   </label>
                   <input
@@ -232,19 +232,19 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     placeholder="e.g., OpenAI GPT-4 Production"
-                    className="w-full px-4 py-3 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                    className="w-full px-4 py-3 text-base border border-input rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
                   />
                 </div>
 
                 {/* Provider */}
                 <div>
-                  <label className="block text-base font-semibold text-slate-700 mb-2">
+                  <label className="block text-base font-semibold text-foreground mb-2">
                     Provider
                   </label>
                   <select
                     value={formData.provider}
                     onChange={(e) => handleProviderChange(e.target.value)}
-                    className="w-full px-4 py-3 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                    className="w-full px-4 py-3 text-base border border-input rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
                   >
                     {LLM_PROVIDERS.map((provider) => (
                       <option key={provider.value} value={provider.value}>
@@ -256,7 +256,7 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
 
                 {/* Model */}
                 <div>
-                  <label className="block text-base font-semibold text-slate-700 mb-2">
+                  <label className="block text-base font-semibold text-foreground mb-2">
                     Model
                   </label>
                   
@@ -264,31 +264,32 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
                     value={formData.model}
                     onChange={(modelId) => setFormData({ ...formData, model: modelId })}
                     onSearch={handleModelSearch}
+                    allowCustomValue
                     placeholder="Search models..."
                     loading={fetchingModels}
                     renderOption={(option) => (
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-slate-800 truncate">
+                          <p className="text-sm font-semibold text-foreground truncate">
                             {option.name}
                           </p>
                           {option.id !== option.name && (
-                            <p className="text-xs text-slate-500 truncate mt-0.5">
+                            <p className="text-xs text-muted-foreground truncate mt-0.5">
                               {option.id}
                             </p>
                           )}
                           {option.description && (
-                            <p className="text-xs text-slate-400 line-clamp-1 mt-1">
+                            <p className="text-xs text-muted-foreground line-clamp-1 mt-1">
                               {option.description}
                             </p>
                           )}
                         </div>
                         {option.metadata && (
                           <div className="text-right shrink-0">
-                            <p className="text-xs font-medium text-slate-600">
+                            <p className="text-xs font-medium text-muted-foreground">
                               {option.metadata.context_length.toLocaleString()} ctx
                             </p>
-                            <p className="text-xs text-slate-400 mt-0.5">
+                            <p className="text-xs text-muted-foreground mt-0.5">
                               ${option.metadata.pricing.prompt}/1K
                             </p>
                           </div>
@@ -298,7 +299,7 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
                   />
                   
                   {formData.provider === 'openrouter' && openRouterModels.length === 0 && !fetchingModels && (
-                    <p className="text-sm text-slate-500 mt-2">
+                    <p className="text-sm text-muted-foreground mt-2">
                       Enter your OpenRouter API key below to load available models
                     </p>
                   )}
@@ -313,11 +314,11 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
 
                 {/* API Key */}
                 <div>
-                  <label className="block text-base font-semibold text-slate-700 mb-2">
+                  <label className="block text-base font-semibold text-foreground mb-2">
                     API Key
                   </label>
                   <div className="relative">
-                    <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                    <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                     <input
                       type="password"
                       value={formData.apiKey}
@@ -331,23 +332,23 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
                         }
                       }}
                       placeholder="sk-..."
-                      className="w-full pl-12 pr-4 py-3 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                      className="w-full pl-12 pr-4 py-3 text-base border border-input rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
                     />
                   </div>
-                  <p className="text-sm text-slate-500 mt-2">Your API key is encrypted and stored securely</p>
+                  <p className="text-sm text-muted-foreground mt-2">Your API key is encrypted and stored securely</p>
                 </div>
 
                 {/* Active Status */}
-                <label className="flex items-center gap-4 p-4 bg-slate-50 rounded-lg cursor-pointer">
+                <label className="flex items-center gap-4 p-4 bg-muted rounded-lg cursor-pointer">
                   <input
                     type="checkbox"
                     checked={formData.isActive}
                     onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                    className="w-5 h-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                    className="w-5 h-5 rounded border-input text-brand-600 focus:ring-brand-500"
                   />
                   <div>
-                    <p className="text-base font-semibold text-slate-700">Set as Active</p>
-                    <p className="text-sm text-slate-500 mt-0.5">Use this configuration for ATS scanning</p>
+                    <p className="text-base font-semibold text-foreground">Set as Active</p>
+                    <p className="text-sm text-muted-foreground mt-0.5">Use this configuration for ATS scanning</p>
                   </div>
                 </label>
 
@@ -390,7 +391,7 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
 
           {/* Existing Configs */}
           <div className="space-y-3">
-            <h3 className="text-sm font-bold text-slate-900 px-1">Saved Configurations</h3>
+            <h3 className="text-sm font-bold text-foreground px-1">Saved Configurations</h3>
             
             {loading ? (
               <div className="flex items-center justify-center py-12">
@@ -398,26 +399,26 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
               </div>
             ) : configs.length === 0 ? (
               <div className="text-center py-12">
-                <Cpu className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                <p className="text-sm text-slate-500">No configurations yet</p>
-                <p className="text-xs text-slate-400 mt-1">Add your first LLM API configuration to get started</p>
+                <Cpu className="w-12 h-12 text-muted-foreground/40 mx-auto mb-3" />
+                <p className="text-sm text-muted-foreground">No configurations yet</p>
+                <p className="text-xs text-muted-foreground mt-1">Add your first LLM API configuration to get started</p>
               </div>
             ) : (
               configs.map((config) => (
                 <div
                   key={config.id}
-                  className="glass-card p-4 flex items-center justify-between hover:shadow-lg transition-all"
+                  className="glass-card p-4 flex items-center justify-between transition-colors"
                 >
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
-                      <h4 className="text-sm font-bold text-slate-800">{config.name}</h4>
+                      <h4 className="text-sm font-bold text-foreground">{config.name}</h4>
                       {config.isActive && (
                         <span className="px-2 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold rounded-full">
                           ACTIVE
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-3 text-xs text-slate-500">
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
                       <span className="font-medium">{LLM_PROVIDERS.find(p => p.value === config.provider)?.label}</span>
                       <span>•</span>
                       <span>{config.model}</span>
@@ -429,7 +430,7 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
                       onClick={() => handleToggleActive(config.id, config.isActive)}
                       className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
                         config.isActive
-                          ? 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          ? 'bg-muted text-muted-foreground hover:bg-accent'
                           : 'bg-brand-100 text-brand-700 hover:bg-brand-200'
                       }`}
                     >
@@ -449,10 +450,10 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end">
+        <div className="px-6 py-4 bg-muted border-t border-border flex justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
+            className="px-4 py-2 text-sm font-semibold text-foreground hover:bg-accent rounded-lg transition-colors"
           >
             Close
           </button>

@@ -65,7 +65,12 @@ export default function FloatingButton({ onClick, isExpanded }: FloatingButtonPr
         cursor: dragging.current ? 'grabbing' : 'grab',
         userSelect: 'none',
         WebkitUserSelect: 'none',
+        background: 'transparent',
+        border: 'none',
+        padding: 0,
       }}
+      aria-label="Open JD Scan assistant"
+      title="Open JD Scan assistant"
     >
       <div style={{ position: 'relative' }}>
         {/* Main Button */}
@@ -73,19 +78,18 @@ export default function FloatingButton({ onClick, isExpanded }: FloatingButtonPr
           style={{
             width: 56,
             height: 56,
-            background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+            background: 'oklch(var(--jd-primary))',
             borderRadius: '50%',
             boxShadow: isHovered
-              ? '0 8px 25px rgba(2, 132, 199, 0.5), 0 0 0 4px rgba(2, 132, 199, 0.15)'
-              : '0 4px 14px rgba(2, 132, 199, 0.4)',
+              ? '0 4px 14px oklch(var(--jd-primary) / 0.3), 0 0 0 3px oklch(var(--jd-primary) / 0.15)'
+              : '0 2px 8px oklch(var(--jd-primary) / 0.25)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-            transform: isHovered ? 'scale(1.12)' : 'scale(1)',
+            transition: 'box-shadow 0.2s ease',
           }}
         >
-          <ScanLine style={{ width: 26, height: 26, color: 'white' }} />
+          <ScanLine style={{ width: 26, height: 26, color: 'oklch(var(--jd-primary-foreground))' }} />
         </div>
 
         {/* Pulse ring */}
@@ -94,8 +98,8 @@ export default function FloatingButton({ onClick, isExpanded }: FloatingButtonPr
             position: 'absolute',
             inset: 0,
             borderRadius: '50%',
-            background: 'rgba(2, 132, 199, 0.3)',
-            animation: 'jdscan-ping 1.5s cubic-bezier(0,0,0.2,1) infinite',
+            background: 'oklch(var(--jd-primary) / 0.2)',
+            animation: 'jdscan-ping 2.4s cubic-bezier(0,0,0.2,1) infinite',
             pointerEvents: 'none',
           }}
         />
@@ -108,16 +112,16 @@ export default function FloatingButton({ onClick, isExpanded }: FloatingButtonPr
               top: '50%',
               right: 68,
               transform: 'translateY(-50%)',
-              background: '#0f172a',
-              color: 'white',
+              background: 'oklch(var(--jd-foreground))',
+              color: 'oklch(var(--jd-background))',
               fontSize: 12,
               fontWeight: 600,
-              padding: '6px 12px',
+              padding: '8px 12px',
               borderRadius: 8,
               whiteSpace: 'nowrap',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+              boxShadow: 'var(--jd-shadow-tooltip)',
               pointerEvents: 'none',
-              fontFamily: 'system-ui, -apple-system, sans-serif',
+              fontFamily: 'var(--jd-font-sans)',
             }}
           >
             Open JD Scan
@@ -129,7 +133,7 @@ export default function FloatingButton({ onClick, isExpanded }: FloatingButtonPr
                 transform: 'translateY(-50%) rotate(45deg)',
                 width: 8,
                 height: 8,
-                background: '#0f172a',
+                background: 'oklch(var(--jd-foreground))',
               }}
             />
           </div>
@@ -139,7 +143,7 @@ export default function FloatingButton({ onClick, isExpanded }: FloatingButtonPr
       {/* Inline keyframe for pulse */}
       <style>{`
         @keyframes jdscan-ping {
-          75%, 100% { transform: scale(1.8); opacity: 0; }
+          75%, 100% { transform: scale(1.5); opacity: 0; }
         }
       `}</style>
     </button>

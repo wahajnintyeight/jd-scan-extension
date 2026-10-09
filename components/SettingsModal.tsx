@@ -4,8 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { X, Monitor, Moon, Sun, Layout, Layers, Bell, Zap, Cpu, Key, CheckCircle2, AlertCircle, Loader2, Power, Trash2, Sparkles, Shield } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { X, Monitor, Moon, Sun, Layout, Layers, Bell, Zap, Cpu, Key, CheckCircle2, AlertCircle, Loader2, Power, Trash2, Sparkles, Shield, Pencil } from 'lucide-react';
+import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { UserSettings } from '../utils/settings';
 import { 
   LLM_PROVIDERS, 
@@ -34,6 +34,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
   const [configs, setConfigs] = useState<LLMAPIConfig[]>(propConfigs || []);
   const [loading, setLoading] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingConfigId, setEditingConfigId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     provider: 'openai',
@@ -149,26 +150,52 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
     setFormError('');
     setFormSuccess('');
 
-    if (!formData.name || !formData.provider || !formData.model || !formData.apiKey) {
-      setFormError('All fields are required');
+    if (!formData.provider || !formData.model || (!editingConfigId && !formData.apiKey.trim())) {
+      setFormError(editingConfigId ? 'Provider and model are required' : 'Provider, model, and API key are required');
       return;
     }
 
+    const payload = {
+      ...formData,
+      name: formData.name.trim() || `${formData.provider}/${formData.model}`,
+      apiKey: formData.apiKey.trim(),
+    };
     setSubmitting(true);
-    const result = await createLLMConfig(formData);
+    const result = editingConfigId
+      ? await updateLLMConfig(editingConfigId, payload)
+      : await createLLMConfig(payload);
     setSubmitting(false);
 
     if (result.success) {
-      setFormSuccess('Configuration saved!');
+      setFormSuccess(editingConfigId ? 'Configuration updated!' : 'Configuration saved!');
       setFormData({ name: '', provider: 'openai', model: '', apiKey: '', isActive: true });
       setTimeout(() => {
         setShowAddForm(false);
+        setEditingConfigId(null);
         setFormSuccess('');
         loadConfigs();
       }, 1500);
     } else {
       setFormError(result.error || 'Failed to save');
     }
+  };
+
+  const handleEdit = (config: LLMAPIConfig) => {
+    setEditingConfigId(config.id);
+    setFormData({ name: config.name || '', provider: config.provider, model: config.model, apiKey: '', isActive: config.isActive });
+    setFormError('');
+    setFormSuccess('');
+    setTestResult(null);
+    setShowAddForm(true);
+  };
+
+  const handleCancelForm = () => {
+    setShowAddForm(false);
+    setEditingConfigId(null);
+    setFormData({ name: '', provider: 'openai', model: '', apiKey: '', isActive: true });
+    setFormError('');
+    setFormSuccess('');
+    setTestResult(null);
   };
 
   const handleToggleActive = async (id: string, currentStatus: boolean) => {
@@ -185,45 +212,43 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
   if (!isOpen) return null;
 
   return (
+    <MotionConfig reducedMotion="user">
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
-        className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+        className="absolute inset-0 bg-overlay/60"
       />
       
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="relative w-full max-w-4xl max-h-[90vh] bg-background rounded-3xl shadow-2xl overflow-hidden flex flex-col"
+        className="settings-modal-dialog relative w-full max-w-4xl max-h-[90dvh] bg-background rounded-3xl shadow-2xl overflow-hidden flex flex-col"
       >
-        {/* Decorative Header Background */}
-        <div className="absolute top-0 left-0 right-0 h-48 bg-gradient-to-br from-brand-500/10 via-purple-500/10 to-transparent pointer-events-none" />
-        
         {/* Header */}
-        <div className="relative flex items-center justify-between px-8 py-6 border-b border-border/50">
+        <div className="settings-modal-header relative flex items-center justify-between px-8 py-6 border-b border-border/50">
           <div>
             <h2 className="text-2xl font-black tracking-tight text-foreground">
               Settings
             </h2>
-            <p className="text-sm text-muted-foreground mt-1">Customize your JD Scan experience</p>
+            <p className="text-sm text-muted-foreground mt-1">Control how JD Scan works</p>
           </div>
           <button
             onClick={onClose}
-            className="p-2.5 hover:bg-muted rounded-xl transition-all active:scale-95 group"
+            className="p-2.5 hover:bg-muted rounded-xl transition-colors active:scale-95 group"
           >
             <X className="w-5 h-5 text-muted-foreground group-hover:text-foreground" />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="relative flex gap-2 px-8 pt-4 bg-muted/30">
+        <div className="settings-modal-tabs relative flex gap-2 px-8 pt-4 bg-muted/30">
           <button
             onClick={() => setActiveTab('general')}
-            className={`relative flex items-center gap-2 px-6 py-3 text-sm font-bold rounded-t-xl transition-all ${
+            className={`relative flex items-center gap-2 px-6 py-3 text-sm font-bold rounded-t-xl transition-colors ${
               activeTab === 'general'
                 ? 'bg-background text-brand-600 shadow-sm'
                 : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
@@ -240,7 +265,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
           </button>
           <button
             onClick={() => setActiveTab('llm')}
-            className={`relative flex items-center gap-2 px-6 py-3 text-sm font-bold rounded-t-xl transition-all ${
+            className={`relative flex items-center gap-2 px-6 py-3 text-sm font-bold rounded-t-xl transition-colors ${
               activeTab === 'llm'
                 ? 'bg-background text-brand-600 shadow-sm'
                 : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
@@ -258,7 +283,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto bg-background">
+        <div data-settings-modal-content className="flex-1 overflow-y-auto bg-background">
           <AnimatePresence mode="wait">
             {activeTab === 'general' ? (
               <motion.div
@@ -266,6 +291,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 20 }}
+                data-settings-modal-panel
                 className="p-8 space-y-8"
               >
                 {/* Display Mode */}
@@ -279,19 +305,17 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                       <p className="text-xs text-muted-foreground">Choose how JD Scan appears</p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="settings-choice-grid grid grid-cols-2 gap-4">
                     {[
                       { id: 'sidebar', label: 'Sidebar Panel', desc: 'Docked to browser side', icon: Layout },
                       { id: 'overlay', label: 'Floating Button', desc: 'Minimal overlay on pages', icon: Layers },
                     ].map((mode) => (
-                      <motion.button
+                      <button
                         key={mode.id}
                         onClick={() => onSettingsChange({ displayMode: mode.id as any })}
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        className={`relative p-6 rounded-2xl border-2 transition-all text-left overflow-hidden ${
+                        className={`relative p-6 rounded-2xl border-2 transition-colors text-left overflow-hidden ${
                           settings.displayMode === mode.id
-                            ? 'border-brand-500 bg-gradient-to-br from-brand-50/50 to-purple-50/50 dark:from-brand-900/20 dark:to-purple-900/20 shadow-lg'
+                            ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 shadow-lg'
                             : 'border-border hover:border-brand-300 hover:bg-muted/50'
                         }`}
                       >
@@ -311,7 +335,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                           {mode.label}
                         </p>
                         <p className="text-xs text-muted-foreground">{mode.desc}</p>
-                      </motion.button>
+                      </button>
                     ))}
                   </div>
                 </section>
@@ -319,40 +343,39 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                 {/* Appearance */}
                 <section>
                   <div className="flex items-center gap-2 mb-5">
-                    <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-                      <Sun className="w-4 h-4 text-purple-600" />
+                    <div className="p-2 bg-brand-100 dark:bg-brand-900/30 rounded-lg">
+                      <Sun className="w-4 h-4 text-brand-600" />
                     </div>
                     <div>
                       <h3 className="text-base font-bold text-foreground">Appearance</h3>
                       <p className="text-xs text-muted-foreground">Select your theme preference</p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="settings-appearance-grid flex gap-2 rounded-lg border border-border bg-muted/50 p-1">
                     {[
                       { id: 'light', label: 'Light', icon: Sun },
                       { id: 'dark', label: 'Dark', icon: Moon },
                       { id: 'auto', label: 'System', icon: Monitor },
                     ].map((mode) => (
-                      <motion.button
+                      <button
                         key={mode.id}
                         onClick={() => onSettingsChange({ colorMode: mode.id as any })}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        className={`p-5 rounded-xl border-2 transition-all ${
+                        aria-pressed={settings.colorMode === mode.id}
+                        className={`flex min-w-0 flex-1 items-center justify-center gap-2 rounded-md px-2 py-3 text-xs font-semibold transition-colors ${
                           settings.colorMode === mode.id
-                            ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 shadow-md'
-                            : 'border-border hover:border-purple-300 hover:bg-muted/50'
+                            ? 'bg-background text-brand-700 shadow-sm dark:text-brand-300'
+                            : 'text-muted-foreground hover:bg-background/70 hover:text-foreground'
                         }`}
                       >
-                        <mode.icon className={`w-6 h-6 mx-auto mb-2 ${
-                          settings.colorMode === mode.id ? 'text-purple-600' : 'text-muted-foreground'
+                        <mode.icon className={`h-4 w-4 shrink-0 ${
+                          settings.colorMode === mode.id ? 'text-brand-600' : 'text-muted-foreground'
                         }`} />
-                        <p className={`text-xs font-bold ${
-                          settings.colorMode === mode.id ? 'text-purple-700 dark:text-purple-400' : 'text-muted-foreground'
+                        <p className={`whitespace-nowrap text-xs font-bold ${
+                          settings.colorMode === mode.id ? 'text-brand-700 dark:text-brand-400' : 'text-muted-foreground'
                         }`}>
                           {mode.label}
                         </p>
-                      </motion.button>
+                      </button>
                     ))}
                   </div>
                 </section>
@@ -375,7 +398,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                     ].map((pref) => (
                       <label
                         key={pref.id}
-                        className="flex items-center justify-between p-4 bg-muted/50 hover:bg-muted rounded-xl cursor-pointer transition-all group"
+                        className="flex items-center justify-between p-4 bg-muted/50 hover:bg-muted rounded-xl cursor-pointer transition-colors group"
                       >
                         <div className="flex items-center gap-4">
                           <div className="p-2 bg-background rounded-lg shadow-sm border border-border group-hover:border-brand-200 transition-colors">
@@ -390,7 +413,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                           type="checkbox"
                           checked={(settings as any)[pref.id]}
                           onChange={(e) => onSettingsChange({ [pref.id]: e.target.checked })}
-                          className="w-5 h-5 rounded-lg border-border text-brand-600 focus:ring-brand-500 transition-all bg-background"
+                          className="w-5 h-5 rounded-lg border-border text-brand-600 focus:ring-brand-500 transition-colors bg-background"
                         />
                       </label>
                     ))}
@@ -400,12 +423,12 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                 {/* LLM Config Selection */}
                 <section>
                   <div className="flex items-center gap-2 mb-5">
-                    <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-                      <Cpu className="w-4 h-4 text-purple-600" />
+                    <div className="p-2 bg-brand-100 dark:bg-brand-900/30 rounded-lg">
+                      <Cpu className="w-4 h-4 text-brand-600" />
                     </div>
                     <div>
                       <h3 className="text-base font-bold text-foreground">AI Model for Scanning</h3>
-                      <p className="text-xs text-muted-foreground">Select which LLM to use for ATS analysis</p>
+                      <p className="text-xs text-muted-foreground">Select one enabled configuration for ATS analysis</p>
                     </div>
                   </div>
                   <div className="space-y-3">
@@ -432,35 +455,35 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                         {configs.map((config) => (
                           <label
                             key={config.id}
-                            className={`flex items-center justify-between p-4 rounded-xl cursor-pointer transition-all border-2 ${
-                              settings.selectedLLMConfigId === config.id
-                                ? 'bg-gradient-to-br from-brand-50/50 to-purple-50/50 dark:from-brand-900/20 dark:to-purple-900/20 border-brand-300 shadow-md'
+                            className={`flex items-center justify-between p-4 rounded-xl cursor-pointer transition-colors border-2 ${
+                              Boolean(config.id) && config.isActive && settings.selectedLLMConfigId === config.id
+                                ? 'bg-brand-50 dark:bg-brand-900/20 border-brand-300 shadow-md'
                                 : 'bg-muted/50 hover:bg-muted border-border hover:border-brand-300/50'
                             }`}
                           >
                             <div className="flex items-center gap-4">
                               <div className={`p-2 rounded-lg ${
-                                settings.selectedLLMConfigId === config.id
+                                Boolean(config.id) && config.isActive && settings.selectedLLMConfigId === config.id
                                   ? 'bg-brand-100 dark:bg-brand-900/40'
                                   : 'bg-background border border-border'
                               }`}>
                                 <Cpu className={`w-4 h-4 ${
-                                  settings.selectedLLMConfigId === config.id
+                                  Boolean(config.id) && config.isActive && settings.selectedLLMConfigId === config.id
                                     ? 'text-brand-600'
                                     : 'text-muted-foreground'
                                 }`} />
                               </div>
                               <div>
                                 <div className="flex items-center gap-2">
-                                  <p className="text-sm font-bold text-foreground">{config.name}</p>
+                                  <p className="text-sm font-bold text-foreground">{config.name?.trim() || `${config.provider}/${config.model}`}</p>
                                   {config.isActive && (
                                     <span className="px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 text-[9px] font-black rounded uppercase">
-                                      Active
+                                      Enabled
                                     </span>
                                   )}
                                   {!config.isActive && (
                                     <span className="px-1.5 py-0.5 bg-muted text-muted-foreground text-[9px] font-black rounded uppercase">
-                                      Inactive
+                                      Disabled
                                     </span>
                                   )}
                                 </div>
@@ -472,7 +495,8 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                             <input
                               type="radio"
                               name="selectedLLMConfig"
-                              checked={settings.selectedLLMConfigId === config.id}
+                              disabled={!config.id || !config.isActive}
+                              checked={Boolean(config.id) && config.isActive && settings.selectedLLMConfigId === config.id}
                               onChange={() => onSettingsChange({ selectedLLMConfigId: config.id })}
                               className="w-5 h-5 text-brand-600 focus:ring-brand-500 bg-background"
                             />
@@ -489,12 +513,13 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
+                data-settings-modal-panel
                 className="p-8 space-y-6"
               >
                 {/* Header with Add Button */}
-                <div className="flex items-center justify-between">
+                <div className="settings-api-heading flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
-                    <div className="p-3 bg-gradient-to-br from-brand-100 to-purple-100 dark:from-brand-900/30 dark:to-purple-900/30 rounded-xl">
+                    <div className="p-3 bg-brand-100 dark:bg-brand-900/30 rounded-xl">
                       <Cpu className="w-5 h-5 text-brand-600" />
                     </div>
                     <div>
@@ -508,15 +533,13 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                     </div>
                   </div>
                   {!showAddForm && (
-                    <motion.button
-                      onClick={() => setShowAddForm(true)}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      className="px-5 py-2.5 bg-gradient-to-r from-brand-600 to-brand-500 text-white text-sm font-bold rounded-xl hover:shadow-lg transition-all flex items-center gap-2"
+                    <button
+                      onClick={() => { setEditingConfigId(null); setFormData({ name: '', provider: 'openai', model: '', apiKey: '', isActive: true }); setShowAddForm(true); }}
+                      className="btn-primary px-5 py-2.5 text-sm"
                     >
                       <Sparkles className="w-4 h-4" />
                       Add Configuration
-                    </motion.button>
+                    </button>
                   )}
                 </div>
 
@@ -524,25 +547,22 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                 <AnimatePresence>
                   {showAddForm && (
                     <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
                       className="overflow-hidden"
                     >
-                      <div className="p-6 bg-gradient-to-br from-muted/50 to-brand-50/10 dark:to-brand-900/10 border-2 border-brand-200 dark:border-brand-900 rounded-2xl space-y-5">
+                      <div className="p-6 bg-muted border-2 border-brand-200 dark:border-brand-900 rounded-2xl space-y-5">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <div className="p-2 bg-brand-600 rounded-lg">
                               <Sparkles className="w-4 h-4 text-white" />
                             </div>
-                            <h4 className="text-base font-bold text-foreground">New API Configuration</h4>
+                        <h4 className="text-base font-bold text-foreground">{editingConfigId ? 'Edit API Configuration' : 'New API Configuration'}</h4>
                           </div>
                           <button
                             onClick={() => {
-                              setShowAddForm(false);
-                              setFormError('');
-                              setFormSuccess('');
-                              setTestResult(null);
+                              handleCancelForm();
                             }}
                             className="text-xs text-muted-foreground hover:text-foreground font-semibold px-3 py-1.5 hover:bg-background/50 rounded-lg transition-colors"
                           >
@@ -553,13 +573,13 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                         <form onSubmit={handleSubmit} className="space-y-4">
                           <div className="grid grid-cols-2 gap-4">
                             <div>
-                              <label className="block text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">Configuration Name</label>
+                              <label className="block text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">Configuration Name (optional)</label>
                               <input
                                 type="text"
                                 value={formData.name}
                                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                placeholder="e.g., Production GPT-4"
-                                className="w-full px-4 py-2.5 text-sm bg-background border-2 border-border rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all text-foreground"
+                                placeholder="Defaults to provider/model"
+                                className="w-full px-4 py-2.5 text-sm bg-background border-2 border-border rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-colors text-foreground"
                               />
                             </div>
                             <div>
@@ -567,7 +587,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                               <select
                                 value={formData.provider}
                                 onChange={(e) => handleProviderChange(e.target.value)}
-                                className="w-full px-4 py-2.5 text-sm bg-background border-2 border-border rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all text-foreground"
+                                className="w-full px-4 py-2.5 text-sm bg-background border-2 border-border rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-colors text-foreground"
                               >
                                 {LLM_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                               </select>
@@ -580,6 +600,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                               value={formData.model}
                               onChange={(m) => setFormData({ ...formData, model: m })}
                               onSearch={handleModelSearch}
+                              allowCustomValue
                               loading={fetchingModels}
                               placeholder="Search and select a model..."
                               renderOption={(option) => (
@@ -617,13 +638,13 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                                     handleFetchOpenRouterModels(newApiKey);
                                   }
                                 }}
-                                placeholder="sk-..."
-                                className="w-full pl-11 pr-4 py-2.5 text-sm bg-background border-2 border-border rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all font-mono text-foreground"
+                                placeholder={editingConfigId ? 'Leave blank to keep the current key' : 'sk-...'}
+                                className="w-full pl-11 pr-4 py-2.5 text-sm bg-background border-2 border-border rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-colors font-mono text-foreground"
                               />
                             </div>
                             <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1.5">
                               <Shield className="w-3 h-3" />
-                              Your API key is encrypted and stored securely
+                              {editingConfigId ? 'Leave blank to keep the current key. New keys are encrypted and stored securely.' : 'Your API key is encrypted and stored securely'}
                             </p>
                           </div>
 
@@ -632,18 +653,18 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                               type="button"
                               onClick={handleTestConnection}
                               disabled={testing || !formData.provider || !formData.model || !formData.apiKey}
-                              className="flex-1 px-4 py-3 bg-background hover:bg-muted border-2 border-border hover:border-muted-foreground/30 text-foreground text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="flex-1 px-4 py-3 bg-background hover:bg-muted border-2 border-border hover:border-muted-foreground/30 text-foreground text-sm font-bold rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
                               Test Connection
                             </button>
                             <button
                               type="submit"
-                              disabled={submitting || !formData.name || !formData.provider || !formData.model || !formData.apiKey}
-                              className="flex-[2] px-4 py-3 bg-gradient-to-r from-brand-600 to-brand-500 hover:shadow-lg text-white text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                              disabled={submitting || !formData.provider || !formData.model || (!editingConfigId && !formData.apiKey.trim())}
+                              className="btn-primary flex-[2] text-sm disabled:opacity-50"
                             >
                               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                              Save Configuration
+                              {editingConfigId ? 'Update Configuration' : 'Save Configuration'}
                             </button>
                           </div>
 
@@ -705,7 +726,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                       </div>
                     </div>
                   ) : configs.length === 0 ? (
-                    <div className="text-center py-16 bg-gradient-to-br from-muted/50 to-background rounded-2xl border-2 border-dashed border-border">
+                    <div className="text-center py-16 bg-muted rounded-2xl border-2 border-dashed border-border">
                       <div className="p-5 bg-muted rounded-2xl w-fit mx-auto mb-4 shadow-sm">
                         <Cpu className="w-10 h-10 text-muted-foreground/30" />
                       </div>
@@ -714,8 +735,8 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                         Add your first AI provider configuration to start using AI-powered resume analysis
                       </p>
                       <button
-                        onClick={() => setShowAddForm(true)}
-                        className="px-6 py-3 bg-gradient-to-r from-brand-600 to-brand-500 text-white text-sm font-bold rounded-xl hover:shadow-lg transition-all inline-flex items-center gap-2"
+                        onClick={() => { setEditingConfigId(null); setFormData({ name: '', provider: 'openai', model: '', apiKey: '', isActive: true }); setShowAddForm(true); }}
+                        className="btn-primary inline-flex items-center gap-2"
                       >
                         <Sparkles className="w-4 h-4" />
                         Add Your First Configuration
@@ -729,9 +750,9 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: idx * 0.05 }}
-                          className={`group relative flex items-center justify-between p-5 rounded-2xl border-2 transition-all ${
+                          className={`group relative flex items-center justify-between p-5 rounded-2xl border-2 transition-colors ${
                             config.isActive
-                              ? 'bg-gradient-to-br from-background to-brand-50/10 dark:to-brand-900/10 border-brand-200 dark:border-brand-900/50 hover:border-brand-300 hover:shadow-lg'
+                              ? 'bg-background border-brand-200 dark:border-brand-900/50 hover:border-brand-300 hover:shadow-lg'
                               : 'bg-background border-border hover:border-muted-foreground/30 hover:shadow-md'
                           }`}
                         >
@@ -748,13 +769,13 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                           <div className="flex items-center gap-4 flex-1 min-w-0 pr-4">
                             <div className={`p-3.5 rounded-xl border-2 ${
                               config.isActive 
-                                ? 'bg-gradient-to-br from-brand-100 to-purple-100 dark:from-brand-900/40 dark:to-purple-900/40 border-brand-200 dark:border-brand-900/50' 
+                                ? 'bg-brand-100 dark:bg-brand-900/40 border-brand-200 dark:border-brand-900/50' 
                                 : 'bg-muted/30 border-border'
                             }`}>
                               <Cpu className={`w-6 h-6 ${config.isActive ? 'text-brand-600' : 'text-muted-foreground'}`} />
                             </div>
                             <div className="flex-1 min-w-0">
-                              <h4 className="text-base font-bold text-foreground truncate mb-1">{config.name}</h4>
+                              <h4 className="text-base font-bold text-foreground truncate mb-1">{config.name?.trim() || `${config.provider}/${config.model}`}</h4>
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="px-2 py-0.5 bg-muted text-muted-foreground text-xs font-semibold rounded-md">
                                   {LLM_PROVIDERS.find(p => p.value === config.provider)?.label || config.provider}
@@ -767,8 +788,16 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
 
                           <div className="flex items-center gap-2">
                             <button
+                              onClick={() => handleEdit(config)}
+                              className="p-2.5 text-muted-foreground hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-colors"
+                              title="Edit configuration"
+                              aria-label={`Edit ${config.name?.trim() || config.provider + ' configuration'}`}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
                               onClick={() => handleToggleActive(config.id, config.isActive)}
-                              className={`p-2.5 rounded-lg transition-all ${
+                              className={`p-2.5 rounded-lg transition-colors ${
                                 config.isActive 
                                   ? 'text-muted-foreground hover:text-foreground hover:bg-muted' 
                                   : 'text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600'
@@ -779,7 +808,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                             </button>
                             <button
                               onClick={() => handleDelete(config.id)}
-                              className="p-2.5 text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                              className="p-2.5 text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
                               title="Delete"
                             >
                               <Trash2 className="w-4.5 h-4.5" />
@@ -797,5 +826,6 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
         </div>
       </motion.div>
     </div>
+    </MotionConfig>
   );
 }

@@ -15,6 +15,7 @@ interface SearchableDropdownProps {
   placeholder?: string;
   loading?: boolean;
   disabled?: boolean;
+  allowCustomValue?: boolean;
   className?: string;
   renderOption?: (option: DropdownOption) => React.ReactNode;
   debounceMs?: number;
@@ -27,6 +28,7 @@ export default function SearchableDropdown({
   placeholder = 'Search...',
   loading = false,
   disabled = false,
+  allowCustomValue = false,
   className = '',
   renderOption,
   debounceMs = 300,
@@ -139,24 +141,37 @@ export default function SearchableDropdown({
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-5 h-5 text-brand-600 animate-spin" />
             </div>
-          ) : options.length === 0 ? (
-            <div className="px-4 py-8 text-center">
-              <p className="text-sm text-muted-foreground">No results found</p>
-              <p className="text-xs text-muted-foreground/60 mt-1">
-                {searchQuery ? 'Try a different search term' : 'Start typing to search'}
-              </p>
-            </div>
           ) : (
-            options.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => handleSelect(option.id)}
-                className="w-full px-4 py-3 text-left hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-colors border-b border-border/50 last:border-b-0"
-              >
-                {renderOption ? renderOption(option) : defaultRenderOption(option)}
-              </button>
-            ))
+            <>
+              {allowCustomValue && searchQuery.trim() && !options.some((option) => option.id === searchQuery.trim()) && (
+                <button
+                  type="button"
+                  onClick={() => handleSelect(searchQuery.trim())}
+                  className="w-full px-4 py-3 text-left hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-colors border-b border-border/50"
+                >
+                  <p className="text-sm font-semibold text-foreground">Use custom model ID</p>
+                  <p className="text-xs text-muted-foreground truncate mt-0.5">{searchQuery.trim()}</p>
+                </button>
+              )}
+              {options.length === 0 && (!allowCustomValue || !searchQuery.trim()) && (
+                <div className="px-4 py-8 text-center">
+                  <p className="text-sm text-muted-foreground">No results found</p>
+                  <p className="text-xs text-muted-foreground/60 mt-1">
+                    {searchQuery ? 'Try a different search term' : 'Start typing to search'}
+                  </p>
+                </div>
+              )}
+              {options.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => handleSelect(option.id)}
+                  className="w-full px-4 py-3 text-left hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-colors border-b border-border/50 last:border-b-0"
+                >
+                  {renderOption ? renderOption(option) : defaultRenderOption(option)}
+                </button>
+              ))}
+            </>
           )}
         </div>
       )}

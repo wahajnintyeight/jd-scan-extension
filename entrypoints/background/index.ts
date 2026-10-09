@@ -1,4 +1,5 @@
 import { defineBackground } from "wxt/utils/define-background";
+import { API_BASE_URL } from "../../utils/apiTransport";
 
 export default defineBackground({
     type: "module",
@@ -7,6 +8,72 @@ export default defineBackground({
 
         // Handle messages from sidepanel or content script
         chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+            if (request?.type === "JD_SCAN_API_REQUEST") {
+                if (sender.id !== chrome.runtime.id || typeof request.url !== "string") {
+                    sendResponse({ success: false, error: "Untrusted API request." });
+                    return false;
+                }
+
+                const apiBase = new URL(API_BASE_URL);
+                let target: URL;
+                try {
+                    target = new URL(request.url);
+                } catch {
+                    sendResponse({ success: false, error: "Invalid API URL." });
+                    return false;
+                }
+
+                const apiPath = apiBase.pathname.replace(/\/+$/, "");
+                const method = typeof request.method === "string" ? request.method.toUpperCase() : "GET";
+                if (
+                    target.origin !== apiBase.origin ||
+                    target.username !== "" ||
+                    target.password !== "" ||
+                    target.hash !== "" ||
+                    !(target.pathname === apiPath || target.pathname.startsWith(`${apiPath}/`)) ||
+                    !["GET", "POST", "PUT", "DELETE"].includes(method)
+                ) {
+                    sendResponse({ success: false, error: "API request is outside the configured API." });
+                    return false;
+                }
+
+                const headers = new Headers();
+                for (const [name, value] of Object.entries(request.headers || {})) {
+                    if (!["content-type", "sessionid"].includes(name.toLowerCase()) || typeof value !== "string") {
+                        sendResponse({ success: false, error: "Unsupported API request header." });
+                        return false;
+                    }
+                    headers.set(name, value);
+                }
+
+                if (request.body !== undefined && typeof request.body !== "string") {
+                    sendResponse({ success: false, error: "Invalid API request body." });
+                    return false;
+                }
+
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 90_000);
+                fetch(target, {
+                    method,
+                    headers,
+                    body: method === "GET" ? undefined : request.body,
+                    signal: controller.signal,
+                })
+                    .then(async (response) => sendResponse({
+                        success: true,
+                        status: response.status,
+                        statusText: response.statusText,
+                        contentType: response.headers.get("Content-Type") || undefined,
+                        body: await response.text(),
+                    }))
+                    .catch((error) => sendResponse({
+                        success: false,
+                        error: error instanceof Error ? error.message : "API request failed.",
+                    }))
+                    .finally(() => clearTimeout(timeout));
+                return true;
+            }
+
             if (request.type === "SCAN_REQUEST") {
                 console.log("Scan request received in background", request.data);
 

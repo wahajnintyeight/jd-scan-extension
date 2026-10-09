@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
     FileText,
     ScanLine,
-    Upload,
     X,
     CheckCircle2,
     AlertCircle,
@@ -10,14 +9,8 @@ import {
     TrendingUp,
     History,
     Settings,
-    Plus,
-    File,
-    FileType2,
-    Trash2,
-    Check,
     CloudUpload,
     Sparkles,
-    ArrowUpFromLine,
     Files,
     GripVertical,
     RefreshCw,
@@ -29,90 +22,31 @@ import {
 } from "lucide-react";
 import { scanMultipleResumes } from "../../utils/atsScanner";
 import { loadSettings, saveSettings, UserSettings, DEFAULT_SETTINGS, applyColorMode } from "../../utils/settings";
-import { getSessionId } from "../../utils/session";
 import { scanResumeATS, fetchLLMConfigs, LLMAPIConfig } from "../../utils/api";
+import { ACCEPTED_MIMES, getFileTypeConfig } from "../../components/sidepanel/resumeHelpers";
+import { JobData, Resume, ScanResult, UploadingFile } from "../../components/sidepanel/types";
 import SettingsModal from "../../components/SettingsModal";
+import ApplicationAgent from "../../components/ApplicationAgent";
+import AnalysisReport from "../../components/sidepanel/AnalysisReport";
+import HistoryTab from "../../components/sidepanel/HistoryTab";
+import ResumeLibraryTab from "../../components/sidepanel/ResumeLibraryTab";
 import FloatingOverlay from "../../components/FloatingOverlay";
 import FloatingButton from "../../components/FloatingButton";
+import HighlightedJobDescription from "../../components/HighlightedJobDescription";
+import { extractTextFromPDF } from "../../utils/pdfProcessor";
+import { highlightInDOM, injectHighlightStyles, removeHighlighting } from "../../utils/keywordHighlighter";
 
-interface JobData {
-    jd: string;
-    title: string;
-    company: string;
-}
-
-interface Resume {
-    id: string;
-    name: string;
-    content: string;
-    fileSize: number;
-    fileType: string;
-    uploadedAt: string;
-    selected: boolean;
-}
-
-interface UploadingFile {
-    id: string;
-    name: string;
-    progress: number;
-    status: "uploading" | "processing" | "done" | "error";
-    error?: string;
-}
-
-interface ScanResult {
-    resumeId: string;
-    score: number;
-    matchedKeywords: string[];
-    missingKeywords: string[];
-    suggestions: string[];
-}
-
-const FILE_TYPE_CONFIG: Record<string, { color: string; bg: string; border: string; label: string }> = {
-    "application/pdf": { color: "text-red-600 dark:text-red-400", bg: "bg-red-50 dark:bg-red-900/20", border: "border-red-100 dark:border-red-800", label: "PDF" },
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": { color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-50 dark:bg-blue-900/20", border: "border-blue-100 dark:border-blue-800", label: "DOCX" },
-    "application/msword": { color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-50 dark:bg-blue-900/20", border: "border-blue-100 dark:border-blue-800", label: "DOC" },
-    "text/plain": { color: "text-slate-600 dark:text-slate-300", bg: "bg-slate-100 dark:bg-slate-800/50", border: "border-slate-200 dark:border-slate-700", label: "TXT" },
-};
-
-function getFileTypeConfig(type: string) {
-    return FILE_TYPE_CONFIG[type] || { color: "text-slate-500 dark:text-slate-300", bg: "bg-slate-50 dark:bg-slate-800/50", border: "border-slate-100 dark:border-slate-700", label: "FILE" };
-}
-
-function formatFileSize(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function timeAgo(dateStr: string): string {
-    const now = new Date();
-    const date = new Date(dateStr);
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    if (diffMins < 1) return "Just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHrs = Math.floor(diffMins / 60);
-    if (diffHrs < 24) return `${diffHrs}h ago`;
-    const diffDays = Math.floor(diffHrs / 24);
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
-}
-
-const ACCEPTED_TYPES = ".pdf,.doc,.docx,.txt";
-const ACCEPTED_MIMES = [
-    "application/pdf",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "text/plain",
-];
-
-export default function App() {
+export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement } = {}) {
+    // Detect if we're running in a content script context or sidepanel/popup
+    const isContentScript = typeof window !== 'undefined' && /^https?:$/.test(window.location.protocol);
+    
     const [resumes, setResumes] = useState<Resume[]>([]);
     const [jobData, setJobData] = useState<JobData>({ jd: "", title: "", company: "" });
     const [isManualMode, setIsManualMode] = useState(false);
     const [scanning, setScanning] = useState(false);
+    const [scanError, setScanError] = useState('');
     const [results, setResults] = useState<ScanResult[]>([]);
-    const [activeTab, setActiveTab] = useState<'match' | 'resumes' | 'history'>('match');
+    const [activeTab, setActiveTab] = useState<'match' | 'agent' | 'resumes' | 'history'>('agent');
     const [isDragOver, setIsDragOver] = useState(false);
     const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
     const [showUploadZone, setShowUploadZone] = useState(false);
@@ -123,35 +57,42 @@ export default function App() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const dropZoneRef = useRef<HTMLDivElement>(null);
     const dragCounter = useRef(0);
+    const selectedLLMConfig = llmConfigs.find((config) => config.id === settings.selectedLLMConfigId);
 
-    // Load settings on mount
+    // Load settings everywhere, but only contact the API after the page overlay opens.
     useEffect(() => {
+        let cancelled = false;
         (async () => {
             const loaded = await loadSettings();
+            if (cancelled) return;
             setSettings(loaded);
-            applyColorMode(loaded.colorMode);
+            applyColorMode(loaded.colorMode, colorModeTarget);
+
+            if (isContentScript && !isOverlayExpanded) return;
 
             const configs = await fetchLLMConfigs();
+            if (cancelled) return;
             setLlmConfigs(configs);
+
+            console.log("JD Scan: Loaded settings:", loaded);
+            console.log("JD Scan: Fetched LLM configs:", configs);
 
             if (!loaded.selectedLLMConfigId && configs.length > 0) {
                 const activeConfigs = configs.filter((c) => c.isActive);
-                const autoConfig = (activeConfigs.length === 1 ? activeConfigs[0] : (configs.find((c) => c.isActive) || configs[0]));
+                const autoConfig = activeConfigs.length === 1 ? activeConfigs[0] : undefined;
+                
+                console.log("JD Scan: Auto-selecting config:", autoConfig);
+                
                 if (autoConfig) {
-                    await handleSettingsChange({ selectedLLMConfigId: autoConfig.id });
+                    const newSettings = { ...loaded, selectedLLMConfigId: autoConfig.id };
+                    setSettings(newSettings);
+                    await saveSettings({ selectedLLMConfigId: autoConfig.id });
+                    console.log("JD Scan: Saved auto-selected config on mount:", autoConfig.id);
                 }
             }
         })();
-
-        // Initialize session
-        getSessionId().then((sessionId) => {
-            if (sessionId) {
-                console.log('Session initialized:', sessionId);
-            } else {
-                console.error('Failed to initialize session');
-            }
-        });
-    }, []);
+        return () => { cancelled = true; };
+    }, [colorModeTarget, isContentScript, isOverlayExpanded]);
 
     useEffect(() => {
         chrome.storage?.local?.get("resumes", (data) => {
@@ -180,14 +121,22 @@ export default function App() {
                 setResults(msg.data);
                 setScanning(false);
             }
+            if (msg.type === "FORCE_SHOW_BUTTON" && isContentScript) {
+                setIsOverlayExpanded(true);
+            }
             if (msg.type === "SETTINGS_UPDATED") {
                 setSettings(msg.settings);
-                applyColorMode(msg.settings.colorMode);
+                applyColorMode(msg.settings.colorMode, colorModeTarget);
             }
         };
 
         // Listen for storage changes (reliable fallback)
         const storageListener = (changes: any, namespace: string) => {
+            if (namespace === 'local' && changes.userSettings) {
+                const updated = { ...DEFAULT_SETTINGS, ...changes.userSettings.newValue };
+                setSettings(updated);
+                applyColorMode(updated.colorMode, colorModeTarget);
+            }
             if (namespace === 'local' && changes.jdScan_lastJob) {
                 const newData = changes.jdScan_lastJob.newValue?.data;
                 if (newData?.jd) {
@@ -211,11 +160,78 @@ export default function App() {
         setSettings((prev) => {
             const updated = { ...prev, ...newSettings };
             if (newSettings.colorMode) {
-                applyColorMode(newSettings.colorMode);
+                applyColorMode(newSettings.colorMode, colorModeTarget);
             }
             return updated;
         });
         await saveSettings(newSettings);
+    };
+
+    const highlightOnPage = async (resumeContent: string) => {
+        try {
+            // If we're in a content script context, highlight directly in the DOM
+            if (isContentScript) {
+                // Find the job description element on the page
+                const jobElements = document.querySelectorAll('[data-ui="job-description"], .job-description, .jobs-description__content, .jobs-description-content__text, main section, main article');
+                if (jobElements.length > 0) {
+                    injectHighlightStyles();
+                    const result = highlightInDOM(jobElements[0] as Element, resumeContent);
+                    console.log("JD Scan: Highlighting applied successfully in content script", result);
+                } else {
+                    console.warn("JD Scan: No job description element found for highlighting");
+                }
+                return;
+            }
+            
+            // If we're in sidepanel/popup, send message to content script
+            if (typeof chrome === 'undefined' || !chrome.tabs) {
+                console.error("JD Scan: Chrome API not available");
+                return;
+            }
+            
+            const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (tabs[0]?.id) {
+                const response = await chrome.tabs.sendMessage(tabs[0].id, {
+                    type: "HIGHLIGHT_KEYWORDS",
+                    resumeContent
+                });
+                
+                if (response?.success) {
+                    console.log("JD Scan: Highlighting applied successfully", response.result);
+                } else {
+                    console.error("JD Scan: Highlighting failed", response?.error);
+                }
+            }
+        } catch (error) {
+            console.error("JD Scan: Failed to send highlight message", error);
+        }
+    };
+
+    const removeHighlightsFromPage = async () => {
+        try {
+            // If we're in a content script context, remove highlights directly from the DOM
+            if (isContentScript) {
+                const jobElements = document.querySelectorAll('[data-ui="job-description"], .job-description, .jobs-description__content, .jobs-description-content__text, main section, main article');
+                if (jobElements.length > 0) {
+                    removeHighlighting(jobElements[0] as Element);
+                    console.log("JD Scan: Highlights removed successfully in content script");
+                }
+                return;
+            }
+            
+            // If we're in sidepanel/popup, send message to content script
+            if (typeof chrome === 'undefined' || !chrome.tabs) {
+                console.error("JD Scan: Chrome API not available");
+                return;
+            }
+            
+            const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (tabs[0]?.id) {
+                await chrome.tabs.sendMessage(tabs[0].id, { type: "REMOVE_HIGHLIGHTS" });
+            }
+        } catch (error) {
+            console.error("JD Scan: Failed to remove highlights", error);
+        }
     };
 
     const processFiles = useCallback(async (fileList: FileList | File[]) => {
@@ -256,12 +272,24 @@ export default function App() {
                 );
 
                 let content = "";
-                if (file.type === "text/plain" || file.name.endsWith('.txt')) {
+                console.log(`[Resume Process] Processing file: ${file.name}, type: ${file.type}`);
+
+                if (file.type === "text/plain" || file.name.toLowerCase().endsWith('.txt')) {
+                    console.log(`[Resume Process] Extracting text from TXT file`);
                     content = await file.text();
+                } else if (file.type === "application/pdf" || file.name.toLowerCase().endsWith('.pdf')) {
+                    console.log(`[Resume Process] Extracting text from PDF file`);
+                    const arrayBuffer = await file.arrayBuffer();
+                    content = await extractTextFromPDF(arrayBuffer);
+                } else if (file.name.toLowerCase().endsWith('.docx') || file.name.toLowerCase().endsWith('.doc')) {
+                    console.log(`[Resume Process] Word document detected, using placeholder (Mammoth integration needed)`);
+                    content = `Parsed content of ${file.name} (Word Doc Support Pending)`;
                 } else {
-                    // For PDF/DOCX: read as text placeholder (real impl would use pdf-parse or mammoth)
+                    console.log(`[Resume Process] Unknown file type, using placeholder`);
                     content = `Parsed content of ${file.name}`;
                 }
+
+                console.log(`[Resume Process] Extraction complete. Length: ${content.length}`);
 
                 await new Promise((r) => setTimeout(r, 200));
 
@@ -375,9 +403,41 @@ export default function App() {
         });
     };
 
-    const selectedResumes = resumes.filter((r) => r.selected);
+    const selectedResumes = React.useMemo(() => resumes.filter((r) => r.selected), [resumes]);
+    const primaryResumeContent = React.useMemo(() => 
+        selectedResumes.length > 0 ? selectedResumes[0].content : '', 
+        [selectedResumes]
+    );
 
     const fetchPageJD = () => {
+        // If we're in a content script context, extract job data directly
+        if (isContentScript) {
+            // The extractJobData function is defined in the content script
+            // We need to access it from the global scope or re-implement it
+            // For now, let's try to get it from the page
+            const jobElements = document.querySelectorAll('[data-ui="job-description"], .job-description, .jobs-description__content, .jobs-description-content__text');
+            if (jobElements.length > 0) {
+                const jd = (jobElements[0] as HTMLElement).innerText || jobElements[0].textContent || "";
+                const titleEl = document.querySelector('[data-ui="job-title"], .job-title, h1');
+                const companyEl = document.querySelector('[data-ui="company-name"], .company-name');
+                
+                setJobData({
+                    jd: jd.trim(),
+                    title: titleEl?.textContent?.trim() || "",
+                    company: companyEl?.textContent?.trim() || ""
+                });
+                setIsManualMode(false);
+                console.log("JD Scan: Extracted job data directly from page");
+            }
+            return;
+        }
+        
+        // If we're in sidepanel/popup, send message to content script
+        if (typeof chrome === 'undefined' || !chrome.tabs) {
+            console.error("JD Scan: Chrome API not available");
+            return;
+        }
+        
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs: any[]) => {
             if (tabs[0]?.id) {
                 chrome.tabs.sendMessage(tabs[0].id, { type: "GET_JD" }, (response: any) => {
@@ -391,77 +451,42 @@ export default function App() {
     };
 
     const startAIScan = async () => {
-        if (!jobData.jd || selectedResumes.length === 0) return;
-
-        // Ensure we have an LLM config selected. "Active" and "Selected" are different concepts;
-        // if none is selected, auto-pick an active config (or fallback) and persist it.
-        let llmConfigIdToUse = settings.selectedLLMConfigId;
-        if (!llmConfigIdToUse) {
-            const configsToPickFrom = llmConfigs.length > 0 ? llmConfigs : await fetchLLMConfigs();
-            if (llmConfigs.length === 0 && configsToPickFrom.length > 0) {
-                setLlmConfigs(configsToPickFrom);
-            }
-
-            const activeConfigs = configsToPickFrom.filter((c) => c.isActive);
-            const autoConfig = (activeConfigs.length === 1
-                ? activeConfigs[0]
-                : (configsToPickFrom.find((c) => c.isActive) || configsToPickFrom[0]));
-
-            if (autoConfig?.id) {
-                llmConfigIdToUse = autoConfig.id;
-                await handleSettingsChange({ selectedLLMConfigId: autoConfig.id });
-            }
-        }
-
-        if (!llmConfigIdToUse) {
-            alert('Please select an LLM configuration in Settings before scanning.');
-            setShowSettings(true);
-            return;
-        }
-
+        if (!jobData.jd || selectedResumes.length === 0 || scanning) return;
         setScanning(true);
-
+        setScanError('');
+        setResults([]);
         try {
-            // Scan each resume using the backend API
-            const scanPromises = selectedResumes.map(async (resume) => {
-                const result = await scanResumeATS(
-                    llmConfigIdToUse!,
-                    resume.content,
-                    jobData.jd
-                );
-
-                if (result.success && result.data) {
-                    // Extract ATS score from the response
-                    const atsScore = result.data.ats_score || {};
-
-                    return {
-                        resumeId: resume.id,
-                        score: atsScore.score || atsScore.matchPercentage || 0,
-                        matchedKeywords: atsScore.matchedKeywords || atsScore.matched_keywords || [],
-                        missingKeywords: atsScore.missingKeywords || atsScore.missing_keywords || [],
-                        suggestions: atsScore.suggestions || [],
-                    };
-                } else {
-                    // Fallback to local scanner if API fails
-                    console.warn(`API scan failed for ${resume.name}, using local scanner:`, result.error);
-                    const localResult = scanMultipleResumes(
-                        [{ id: resume.id, content: resume.content }],
-                        jobData.jd
-                    );
-                    return localResult[0];
-                }
-            });
-
-            const scanResults = await Promise.all(scanPromises);
+            const currentSettings = await loadSettings();
+            const configs = await fetchLLMConfigs();
+            setLlmConfigs(configs);
+            const activeConfigs = configs.filter(config => config.isActive);
+            const selectedConfig = currentSettings.selectedLLMConfigId
+                ? activeConfigs.find(config => config.id === currentSettings.selectedLLMConfigId)
+                : activeConfigs.length === 1 ? activeConfigs[0] : undefined;
+            if (!selectedConfig) {
+                setScanError('Choose one enabled AI configuration in Settings before scanning. A disabled, deleted, or unavailable configuration cannot be used.');
+                setShowSettings(true);
+                return;
+            }
+            if (currentSettings.selectedLLMConfigId !== selectedConfig.id) {
+                await saveSettings({ selectedLLMConfigId: selectedConfig.id });
+            }
+            setSettings({ ...currentSettings, selectedLLMConfigId: selectedConfig.id });
+            const scanResults = await Promise.all(selectedResumes.map(async resume => {
+                const result = await scanResumeATS(selectedConfig.id, resume.content, jobData.jd);
+                if (!result.success || !result.data) throw new Error(result.error || 'The selected AI provider could not complete the scan.');
+                const atsScore = result.data.ats_score || {};
+                return {
+                    resumeId: resume.id,
+                    score: atsScore.score ?? atsScore.matchPercentage ?? 0,
+                    matchedKeywords: atsScore.matchedKeywords || atsScore.matched_keywords || [],
+                    missingKeywords: atsScore.missingKeywords || atsScore.missing_keywords || [],
+                    suggestions: atsScore.suggestions || [],
+                };
+            }));
             setResults(scanResults);
         } catch (error) {
-            console.error('Scan failed:', error);
-            // Fallback to local scanner on error
-            const scanResults = scanMultipleResumes(
-                selectedResumes.map((r) => ({ id: r.id, content: r.content })),
-                jobData.jd
-            );
-            setResults(scanResults);
+            setScanError(error instanceof Error ? error.message : 'AI scan failed. Try again or use ATS Keyword Match.');
         } finally {
             setScanning(false);
         }
@@ -469,6 +494,17 @@ export default function App() {
 
     const startLocalScan = () => {
         if (!jobData.jd || selectedResumes.length === 0) return;
+        setScanError('');
+        console.log('[ATS Keyword Match] Button clicked', {
+            jobDescriptionLength: jobData.jd.length,
+            selectedResumeCount: selectedResumes.length,
+            resumes: selectedResumes.map(r => ({
+                id: r.id,
+                name: r.name,
+                contentPreview: r.content.substring(0, 100) + '...'
+            })),
+            timestamp: new Date().toISOString()
+        });
         setScanning(true);
         try {
             const scanResults = scanMultipleResumes(
@@ -493,7 +529,7 @@ export default function App() {
         >
             {/* Global Drag Overlay */}
             {isDragOver && (
-                <div className="absolute inset-0 z-50 bg-brand-600/10 backdrop-blur-sm border-2 border-dashed border-brand-400 rounded-2xl flex flex-col items-center justify-center pointer-events-none animate-in">
+                <div className="absolute inset-0 z-50 bg-brand-600/10 border-2 border-dashed border-brand-400 rounded-2xl flex flex-col items-center justify-center pointer-events-none animate-in">
                     <div className="w-20 h-20 bg-brand-100 dark:bg-brand-900/30 rounded-3xl flex items-center justify-center mb-4 shadow-lg animate-bounce-gentle">
                         <CloudUpload className="w-10 h-10 text-brand-600" />
                     </div>
@@ -505,7 +541,7 @@ export default function App() {
             {/* Header */}
             <header className="px-6 py-5 bg-card border-b border-border flex items-center justify-between sticky top-0 z-10">
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-brand-500 to-brand-700 rounded-xl flex items-center justify-center shadow-lg shadow-brand-200/50">
+                    <div className="w-10 h-10 bg-brand-600 rounded-xl flex items-center justify-center shadow-lg shadow-brand-200/50">
                         <ScanLine className="w-6 h-6 text-white" />
                     </div>
                     <div>
@@ -531,8 +567,9 @@ export default function App() {
             </header>
 
             {/* Tabs Navigation */}
-            <nav className="flex px-4 pt-4 pb-2 bg-card gap-2">
+            <nav className="dashboard-tabs flex px-4 pt-4 pb-2 bg-card gap-2">
                 {[
+                    { id: 'agent', label: 'Apply', icon: Cpu },
                     { id: 'match', label: 'Match', icon: TrendingUp },
                     { id: 'resumes', label: 'Resumes', icon: FileText, badge: resumes.length || undefined },
                     { id: 'history', label: 'History', icon: History },
@@ -540,7 +577,7 @@ export default function App() {
                     <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id as any)}
-                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 relative ${activeTab === tab.id
+                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-colors duration-200 relative ${activeTab === tab.id
                             ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 shadow-sm border border-brand-100 dark:border-brand-900'
                             : 'text-muted-foreground hover:bg-muted/50'
                             }`}
@@ -590,7 +627,7 @@ export default function App() {
                                 </div>
                             </div>
 
-                            <div className={`glass-card overflow-hidden transition-all duration-300 ${isManualMode ? 'p-2' : 'p-4'}`}>
+                            <div className={`glass-card overflow-hidden transition-colors duration-300 ${isManualMode ? 'p-2' : 'p-4'}`}>
                                 {isManualMode ? (
                                     <div className="space-y-2">
                                         <textarea
@@ -634,17 +671,35 @@ export default function App() {
                                                 )}
                                             </div>
                                         )}
-                                        <div className="text-xs text-muted-foreground line-clamp-4 leading-relaxed italic">
-                                            "{jobData.jd}"
-                                        </div>
+                                        
+                                        {/* Highlighted Job Description */}
+                                        <HighlightedJobDescription
+                                            jobDescription={jobData.jd}
+                                            resumeContent={primaryResumeContent}
+                                            showToggle={true}
+                                            showStats={true}
+                                            maxHeight="200px"
+                                            className="mt-3"
+                                        />
+                                        
                                         <div className="flex items-center justify-between pt-3 mt-2 border-t border-border/50">
                                             <span className="text-[10px] text-muted-foreground/60 font-medium">Character count: {jobData.jd.length}</span>
-                                            <button
-                                                onClick={() => setJobData({ jd: "", title: "", company: "" })}
-                                                className="text-[10px] font-bold text-rose-500 hover:text-rose-600 dark:text-rose-400 uppercase tracking-tight"
-                                            >
-                                                Clear
-                                            </button>
+                                            <div className="flex items-center gap-2">
+                                                {selectedResumes.length > 0 && (
+                                                    <button
+                                                        onClick={() => highlightOnPage(primaryResumeContent)}
+                                                        className="text-[10px] font-bold text-blue-500 hover:text-blue-600 dark:text-blue-400 uppercase tracking-tight"
+                                                    >
+                                                        Highlight on Page
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={() => setJobData({ jd: "", title: "", company: "" })}
+                                                    className="text-[10px] font-bold text-rose-500 hover:text-rose-600 dark:text-rose-400 uppercase tracking-tight"
+                                                >
+                                                    Clear
+                                                </button>
+                                            </div>
                                         </div>
                                     </>
                                 ) : (
@@ -679,7 +734,7 @@ export default function App() {
                                             return (
                                                 <div
                                                     key={r.id}
-                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border ${ftConf.bg} ${ftConf.border} transition-all`}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border ${ftConf.bg} ${ftConf.border} transition-colors`}
                                                 >
                                                     <FileText className={`w-3.5 h-3.5 ${ftConf.color}`} />
                                                     <span className="text-xs font-medium text-foreground/80 max-w-[120px] truncate">{r.name}</span>
@@ -696,21 +751,22 @@ export default function App() {
 
                         {/* Scan Action */}
                         <section className="space-y-4 pt-2">
+                            {scanError && <p role="alert" className="text-xs text-destructive">{scanError}</p>}
                             {/* LLM Config Indicator */}
                             {settings.selectedLLMConfigId && llmConfigs.length > 0 && (
-                                <div className="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-50 to-brand-50 dark:from-purple-900/20 dark:to-brand-900/20 border border-purple-200 dark:border-purple-800 rounded-xl">
+                                <div className="flex items-center gap-2 px-4 py-3 bg-accent border border-brand-200 dark:border-brand-800 rounded-xl">
                                     <div className="p-1.5 bg-background rounded-lg shadow-sm">
-                                        <Cpu className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                                        <Cpu className="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" />
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                        <p className="text-[10px] text-purple-600 dark:text-purple-400 font-bold uppercase tracking-tight">AI Model</p>
+                                        <p className="text-[10px] text-brand-600 dark:text-brand-400 font-bold uppercase tracking-tight">AI Model</p>
                                         <p className="text-xs font-semibold text-foreground truncate">
-                                            {llmConfigs.find(c => c.id === settings.selectedLLMConfigId)?.name || 'Unknown'}
+                                            {selectedLLMConfig?.name?.trim() || (selectedLLMConfig ? `${selectedLLMConfig.provider}/${selectedLLMConfig.model}` : 'Unknown')}
                                         </p>
                                     </div>
                                     <button
                                         onClick={() => setShowSettings(true)}
-                                        className="text-[10px] font-bold text-purple-600 dark:text-purple-400 hover:text-purple-700 px-2 py-1 hover:bg-background/50 rounded-lg transition-colors"
+                                        className="text-[10px] font-bold text-brand-600 dark:text-brand-400 hover:text-brand-700 px-2 py-1 hover:bg-background/50 rounded-lg transition-colors"
                                     >
                                         Change
                                     </button>
@@ -725,7 +781,7 @@ export default function App() {
                                 >
                                     {scanning ? (
                                         <>
-                                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            <div className="w-5 h-5 border-2 border-brand-200 border-t-brand-600 dark:border-brand-800 dark:border-t-brand-300 rounded-full animate-spin" />
                                             <span>Analyzing Keywords...</span>
                                         </>
                                     ) : (
@@ -733,7 +789,7 @@ export default function App() {
                                             <Sparkles className="w-5 h-5" />
                                             <span>AI Scan</span>
                                             {selectedResumes.length > 0 && (
-                                                <span className="ml-1 px-2 py-0.5 bg-white/20 rounded-full text-xs">
+                                                <span className="ml-1 px-2 py-0.5 bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 rounded-full text-xs">
                                                     {selectedResumes.length} resume{selectedResumes.length > 1 ? 's' : ''}
                                                 </span>
                                             )}
@@ -758,272 +814,36 @@ export default function App() {
                             )}
                         </section>
 
-                        {/* Results Preview */}
-                        {results.length > 0 && (
-                            <section className="space-y-4 animate-in">
-                                <h3 className="text-sm font-bold text-foreground font-display">Analysis Report</h3>
-                                {results.map((result, idx) => (
-                                    <div
-                                        key={result.resumeId}
-                                        className="glass-card glass-card-hover p-4 border-l-4 border-l-brand-500"
-                                        style={{ animationDelay: `${idx * 100}ms` }}
-                                    >
-                                        <div className="flex items-center justify-between mb-4">
-                                            <div className="flex items-center gap-2 max-w-[180px]">
-                                                <FileText className="w-4 h-4 text-brand-500 shrink-0" />
-                                                <span className="text-sm font-bold text-foreground truncate">
-                                                    {resumes.find((r) => r.id === result.resumeId)?.name || 'Resume'}
-                                                </span>
-                                            </div>
-                                            <div className="flex flex-col items-end">
-                                                <span className={`text-xl font-bold font-display ${result.score >= 80 ? "text-green-600 dark:text-green-400" :
-                                                    result.score >= 60 ? "text-amber-600 dark:text-amber-400" : "text-rose-600 dark:text-rose-400"
-                                                    }`}>
-                                                    {result.score}%
-                                                </span>
-                                                <span className="text-[9px] text-muted-foreground/60 font-medium uppercase tracking-tighter">Match Score</span>
-                                            </div>
-                                        </div>
-
-                                        <div className="space-y-3 pt-2">
-                                            <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
-                                                <div
-                                                    className={`h-full rounded-full transition-all duration-1000 ${result.score >= 80 ? "bg-gradient-to-r from-green-400 to-green-600" :
-                                                        result.score >= 60 ? "bg-gradient-to-r from-amber-400 to-amber-600" : "bg-gradient-to-r from-rose-400 to-rose-600"
-                                                        }`}
-                                                    style={{ width: `${result.score}%` }}
-                                                />
-                                            </div>
-
-                                            <div className="grid grid-cols-2 gap-2 pt-2">
-                                                <div className="bg-green-50/50 dark:bg-green-900/20 p-2.5 rounded-xl border border-green-100/50 dark:border-green-900/50">
-                                                    <span className="text-[9px] font-bold text-green-700 dark:text-green-400 uppercase block mb-1">Matched</span>
-                                                    <span className="text-sm font-bold text-green-800 dark:text-green-300">{result.matchedKeywords.length}</span>
-                                                </div>
-                                                <div className="bg-rose-50/50 dark:bg-rose-900/20 p-2.5 rounded-xl border border-rose-100/50 dark:border-rose-900/50">
-                                                    <span className="text-[9px] font-bold text-rose-700 dark:text-rose-400 uppercase block mb-1">Missing</span>
-                                                    <span className="text-sm font-bold text-rose-800 dark:text-rose-300">{result.missingKeywords.length}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </section>
-                        )}
+                        <AnalysisReport results={results} resumes={resumes} onHighlight={highlightOnPage} />
                     </>
                 )}
 
                 {activeTab === 'resumes' && (
-                    <section className="space-y-5 animate-in">
-                        {/* Header Row */}
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h3 className="text-sm font-bold text-foreground font-display">Resume Library</h3>
-                                <p className="text-[10px] text-muted-foreground/60 mt-0.5">
-                                    {resumes.length > 0
-                                        ? `${selectedResumes.length} of ${resumes.length} selected for scanning`
-                                        : "Upload resumes to get started"}
-                                </p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                {resumes.length > 0 && (
-                                    <button
-                                        onClick={selectAll}
-                                        className="text-[10px] font-bold text-brand-600 dark:text-brand-400 hover:text-brand-700 px-2 py-1 rounded-lg hover:bg-brand-50 dark:hover:bg-brand-900/30 transition-colors"
-                                    >
-                                        {resumes.every((r) => r.selected) ? "Deselect All" : "Select All"}
-                                    </button>
-                                )}
-                                <label className="flex items-center gap-1.5 px-3 py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-xl cursor-pointer transition-all duration-200 shadow-md hover:shadow-lg active:scale-[0.97]">
-                                    <Plus className="w-3.5 h-3.5" />
-                                    Add
-                                    <input
-                                        ref={fileInputRef}
-                                        type="file"
-                                        className="hidden"
-                                        accept={ACCEPTED_TYPES}
-                                        multiple
-                                        onChange={handleFileUpload}
-                                    />
-                                </label>
-                            </div>
-                        </div>
-
-                        {/* Upload Zone */}
-                        {(showUploadZone || resumes.length === 0) && (
-                            <div
-                                ref={dropZoneRef}
-                                onClick={() => fileInputRef.current?.click()}
-                                className={`relative border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-300 group ${isDragOver
-                                    ? "border-brand-400 bg-brand-50/60 dark:bg-brand-900/20 scale-[1.02]"
-                                    : "border-border hover:border-brand-300 hover:bg-brand-50/30 dark:hover:bg-brand-900/10 bg-card/50"
-                                    }`}
-                            >
-                                <div className="flex flex-col items-center gap-3">
-                                    <div className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-300 ${isDragOver
-                                        ? "bg-brand-100 dark:bg-brand-900/40 shadow-lg scale-110"
-                                        : "bg-muted group-hover:bg-brand-100 dark:group-hover:bg-brand-900/30 group-hover:shadow-md"
-                                        }`}>
-                                        <ArrowUpFromLine className={`w-8 h-8 transition-colors duration-300 ${isDragOver ? "text-brand-600" : "text-muted-foreground/30 group-hover:text-brand-500"
-                                            }`} />
-                                    </div>
-                                    <div>
-                                        <h4 className="text-sm font-bold text-foreground">
-                                            {isDragOver ? "Drop files to upload" : "Drag & drop resumes here"}
-                                        </h4>
-                                        <p className="text-xs text-muted-foreground mt-1">
-                                            or <span className="text-brand-600 dark:text-brand-400 font-semibold">click to browse</span>
-                                        </p>
-                                    </div>
-                                    <div className="flex items-center gap-2 mt-1">
-                                        {["PDF", "DOCX", "DOC", "TXT"].map((ext) => (
-                                            <span
-                                                key={ext}
-                                                className="text-[9px] font-bold uppercase bg-muted text-muted-foreground px-2 py-0.5 rounded-md"
-                                            >
-                                                {ext}
-                                            </span>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Upload Progress */}
-                        {uploadingFiles.length > 0 && (
-                            <div className="space-y-2">
-                                {uploadingFiles.map((uf) => (
-                                    <div
-                                        key={uf.id}
-                                        className="glass-card p-3 flex items-center gap-3 animate-in"
-                                    >
-                                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${uf.status === "done"
-                                            ? "bg-green-100 dark:bg-green-900/40"
-                                            : uf.status === "error"
-                                                ? "bg-red-100 dark:bg-red-900/40"
-                                                : "bg-brand-50 dark:bg-brand-900/40"
-                                            }`}>
-                                            {uf.status === "done" ? (
-                                                <Check className="w-4.5 h-4.5 text-green-600 dark:text-green-400" />
-                                            ) : uf.status === "error" ? (
-                                                <X className="w-4.5 h-4.5 text-rose-500 dark:text-rose-400" />
-                                            ) : (
-                                                <div className="w-4.5 h-4.5 border-2 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
-                                            )}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-xs font-semibold text-foreground truncate">{uf.name}</p>
-                                            <div className="flex items-center gap-2 mt-1.5">
-                                                <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                                    <div
-                                                        className={`h-full rounded-full transition-all duration-300 ${uf.status === "done"
-                                                            ? "bg-green-500"
-                                                            : uf.status === "error"
-                                                                ? "bg-rose-400"
-                                                                : "bg-brand-500"
-                                                            }`}
-                                                        style={{ width: `${uf.progress}%` }}
-                                                    />
-                                                </div>
-                                                <span className="text-[9px] font-medium text-muted-foreground w-8 text-right">
-                                                    {uf.status === "done"
-                                                        ? "✓"
-                                                        : uf.status === "error"
-                                                            ? "✗"
-                                                            : `${uf.progress}%`}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        {/* Toggle upload zone button (when resumes exist and zone is hidden) */}
-                        {resumes.length > 0 && !showUploadZone && (
-                            <button
-                                onClick={() => setShowUploadZone(true)}
-                                className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-border hover:border-brand-300 rounded-xl text-xs font-semibold text-muted-foreground/60 hover:text-brand-600 transition-all duration-200 hover:bg-brand-50/30 dark:hover:bg-brand-900/10"
-                            >
-                                <Upload className="w-4 h-4" />
-                                Upload more resumes
-                            </button>
-                        )}
-
-                        {/* Resume List */}
-                        {resumes.length > 0 && (
-                            <div className="space-y-2.5">
-                                {resumes.map((resume, idx) => {
-                                    const ftConf = getFileTypeConfig(resume.fileType);
-                                    return (
-                                        <div
-                                            key={resume.id}
-                                            className={`glass-card p-4 flex items-center gap-3 group transition-all duration-200 cursor-pointer ${resume.selected
-                                                ? "ring-2 ring-brand-200 border-brand-100 bg-brand-50/30 dark:bg-brand-900/20"
-                                                : "hover:shadow-premium-hover hover:-translate-y-0.5"
-                                                }`}
-                                            style={{ animationDelay: `${idx * 60}ms` }}
-                                            onClick={() => toggleResumeSelect(resume.id)}
-                                        >
-                                            {/* Selection Checkbox */}
-                                            <div
-                                                className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all duration-200 ${resume.selected
-                                                    ? "bg-brand-600 border-brand-600"
-                                                    : "border-border group-hover:border-brand-400"
-                                                    }`}
-                                            >
-                                                {resume.selected && <Check className="w-3 h-3 text-white" />}
-                                            </div>
-
-                                            {/* File Type Icon */}
-                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 ${ftConf.bg} ${ftConf.border}`}>
-                                                <FileText className={`w-5 h-5 ${ftConf.color}`} />
-                                            </div>
-
-                                            {/* File Info */}
-                                            <div className="flex-1 min-w-0">
-                                                <h4 className="text-sm font-bold text-foreground truncate">{resume.name}</h4>
-                                                <div className="flex items-center gap-2 mt-0.5">
-                                                    <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${ftConf.bg} ${ftConf.color}`}>
-                                                        {ftConf.label}
-                                                    </span>
-                                                    <span className="text-[10px] text-muted-foreground/60">{formatFileSize(resume.fileSize)}</span>
-                                                    <span className="text-[10px] text-muted-foreground/30">·</span>
-                                                    <span className="text-[10px] text-muted-foreground/60">{timeAgo(resume.uploadedAt)}</span>
-                                                </div>
-                                            </div>
-
-                                            {/* Delete */}
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    deleteResume(resume.id);
-                                                }}
-                                                className="p-2 text-muted-foreground/30 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </section>
-
+                    <ResumeLibraryTab
+                        resumes={resumes}
+                        selectedCount={selectedResumes.length}
+                        uploadingFiles={uploadingFiles}
+                        showUploadZone={showUploadZone}
+                        isDragOver={isDragOver}
+                        fileInputRef={fileInputRef}
+                        dropZoneRef={dropZoneRef}
+                        onSelectAll={selectAll}
+                        onFileUpload={handleFileUpload}
+                        onToggleUploadZone={setShowUploadZone}
+                        onToggleResumeSelect={toggleResumeSelect}
+                        onDeleteResume={deleteResume}
+                    />
                 )}
+                {activeTab === 'history' && <HistoryTab />}
 
-                {activeTab === 'history' && (
-                    <section className="animate-in">
-                        <div className="py-16 flex flex-col items-center justify-center text-center space-y-4">
-                            <div className="w-16 h-16 bg-muted rounded-2xl flex items-center justify-center text-muted-foreground/30">
-                                <History className="w-8 h-8" />
-                            </div>
-                            <div>
-                                <h4 className="text-sm font-bold text-foreground">No scan history</h4>
-                                <p className="text-xs text-muted-foreground px-8 mt-1">Your past scan results will appear here.</p>
-                            </div>
-                        </div>
-                    </section>
+                {activeTab === 'agent' && (
+                    <ApplicationAgent
+                        jobData={jobData}
+                        selectedResumes={selectedResumes}
+                        llmConfigs={llmConfigs}
+                        selectedLLMConfigId={settings.selectedLLMConfigId}
+                        onConfigureProviders={() => setShowSettings(true)}
+                    />
                 )}
 
             </main>
@@ -1047,7 +867,7 @@ export default function App() {
     );
 
     // Render based on display mode
-    if (settings.displayMode === 'overlay') {
+    if (isContentScript || settings.displayMode === 'overlay') {
         return (
             <>
                 <FloatingButton
@@ -1066,6 +886,8 @@ export default function App() {
                     onClose={() => setShowSettings(false)}
                     settings={settings}
                     onSettingsChange={handleSettingsChange}
+                    llmConfigs={llmConfigs}
+                    onConfigsChange={() => fetchLLMConfigs().then(setLlmConfigs)}
                 />
             </>
         );

@@ -1,77 +1,131 @@
-# JD Scan - Resume ATS Matcher
+<div align="center">
+  <img src="./public/icon/128.png" alt="JD Scan icon" width="88" height="88" />
+  <h1>JD Scan</h1>
+  <p><strong>A job-application workspace for your browser.</strong><br />Compare your resume with a job description, then work through the application with an AI-assisted copilot.</p>
 
-A Chrome extension that helps job seekers optimize their resumes by matching them against job descriptions using keyword-based ATS analysis.
+  <p>
+    <a href="https://github.com/wahajnintyeight/jd-scan-extension"><img alt="GitHub stars" src="https://img.shields.io/github/stars/wahajnintyeight/jd-scan-extension?style=for-the-badge&logo=github&label=Stars"></a>
+    <a href="https://github.com/wahajnintyeight/jd-scan-extension/issues"><img alt="Open issues" src="https://img.shields.io/github/issues/wahajnintyeight/jd-scan-extension?style=for-the-badge&logo=github"></a>
+    <a href="https://github.com/wahajnintyeight/jd-scan-extension/graphs/contributors"><img alt="Contributors" src="https://img.shields.io/github/contributors/wahajnintyeight/jd-scan-extension?style=for-the-badge&logo=github"></a>
+    <a href="https://github.com/wahajnintyeight/jd-scan-extension/commits/master"><img alt="Last commit" src="https://img.shields.io/github/last-commit/wahajnintyeight/jd-scan-extension?style=for-the-badge&logo=github"></a>
+  </p>
+  <p>
+    <img alt="Chrome Manifest V3" src="https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4?style=flat-square&logo=googlechrome&logoColor=white">
+    <img alt="Built with WXT" src="https://img.shields.io/badge/Built%20with-WXT-6C47FF?style=flat-square">
+    <a href="https://github.com/wahajnintyeight"><img alt="Maintained by Wahaj" src="https://img.shields.io/badge/Maintained%20by-Wahaj-0A66C2?style=flat-square&logo=github"></a>
+  </p>
+</div>
 
-## Features
+JD Scan is a Chromium extension for reading job postings, comparing them with locally saved resumes, and assisting with supported application forms. It works in a popup, side panel, or floating page assistant.
 
-✨ **Dual Display Modes**
-- Sidebar mode for persistent access
-- Floating overlay mode for on-page convenience
+## What it does
 
-🎯 **Smart ATS Matching**
-- Offline keyword-based analysis
-- Match scoring with detailed insights
-- Identifies missing keywords and provides suggestions
+- **Finds job details:** built-in page adapters for LinkedIn, Indeed, Glassdoor, and Workable, with a generic page reader for other sites.
+- **Compares resumes:** highlights matching and missing job-description keywords and provides an ATS-style match summary.
+- **Keeps a resume library:** import PDF, DOCX, DOC, and TXT resumes. Resume records and extracted text are stored in the extension's local browser storage.
+- **Drafts with your context:** use a configured language model to tailor a summary, suggest resume bullets, draft a cover letter, prepare for interviews, or answer a question using a selected resume and job posting.
+- **Helps with application steps:** inspect supported form fields, draft resume-grounded answers, fill supported empty fields, and continue through clearly identified application steps.
+- **Lets you stay in control:** the assistant stops for sensitive, unclear, unsupported, or missing information. It leaves final review and submission to you.
+- **Fits your workflow:** choose the popup, side panel, or floating assistant; adjust the theme and auto-scan preferences.
 
-📄 **Resume Management**
-- Drag & drop upload (PDF, DOCX, DOC, TXT)
-- Bulk selection for multi-resume comparison
-- Persistent local storage
+## AI providers
 
-🔍 **Auto Job Detection**
-- Supports LinkedIn, Indeed, Glassdoor, Wellfound
-- Manual input option for any job description
-- Real-time sync on job page navigation
+Provider configurations are managed by the connected GoLLM API service. The extension currently offers:
 
-⚙️ **Customizable Settings**
-- Light/Dark/Auto theme
-- Overlay position control
-- Auto-scan preferences
-- Notification settings
+| Provider | Provider ID |
+| --- | --- |
+| OpenAI | `openai` |
+| Anthropic | `anthropic` |
+| Groq | `groq` |
+| Hugging Face Inference Providers | `huggingface` |
+| xAI / Grok | `xai` |
+| Mistral AI | `mistral` |
+| DeepSeek | `deepseek` |
+| Google Gemini | `gemini` |
+| OpenRouter | `openrouter` |
+| Ollama | `ollama` |
 
-## Installation
+The configured backend must support the chosen provider and model. You can enter a model ID when the preset list is out of date. Configuration names are optional; when editing a saved configuration, leaving the API key blank keeps the stored key.
 
-### Development
-```bash
+## Install for development
+
+### Requirements
+
+- Node.js and npm
+- Chrome or another Chromium browser that supports Manifest V3
+- A reachable JD Scan Go API service for AI configuration, model requests, and server-backed scans
+
+### Build and load
+
+```powershell
+git clone https://github.com/wahajnintyeight/jd-scan-extension.git
+cd jd-scan-extension
 npm install
+Copy-Item .env.example .env
+```
+
+Set `VITE_API_BASE_URL` in `.env` to your API service. `.env.example` points to a local development endpoint; the build otherwise defaults to the JD Scan production API.
+
+For a development build with reload support:
+
+```powershell
 npm run dev
 ```
 
-Load the extension from `.output/chrome-mv3-dev` in Chrome's extension manager.
+For a production build:
 
-### Production Build
-```bash
+```powershell
 npm run build
 ```
 
-Load the extension from `.output/chrome-mv3` in Chrome's extension manager.
+In Chrome, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select `.output/chrome-mv3-dev` for the development build or `.output/chrome-mv3` for the production build. Reload the extension after a production rebuild.
 
-## Usage
+## Use JD Scan
 
-1. **Upload Resumes**: Go to the Resumes tab and upload your resume files
-2. **Find a Job**: Navigate to a job posting or paste the description manually
-3. **Run Analysis**: Click "Run Match Analysis" to see your match score
-4. **Optimize**: Review missing keywords and suggestions to improve your resume
+1. Open the extension and add one or more resumes in the resume library.
+2. In Settings, add a provider configuration, test it, and save it. Choose which active configuration to use for scans and drafting.
+3. Open a job posting. JD Scan extracts supported job details automatically, or you can provide the description yourself.
+4. Review the match and missing keywords, then open the application workspace to draft content or work through the form.
+5. Review every answer on the employer's site and submit the application yourself.
 
-## Tech Stack
+The application assistant works with the active browser tab. It can click a clearly identified Apply, Next, or Continue action when the page and form pass its safety checks. It does not submit the final application or upload files for you.
 
-- **Framework**: WXT (Web Extension Framework)
-- **UI**: React 19 + TypeScript
-- **Styling**: Tailwind CSS v3
-- **Icons**: Lucide React
-- **Build**: Vite
+## Data and permissions
 
-## Privacy
+- Resume records (including extracted text) and preferences are stored in the browser extension's local storage.
+- AI actions send the selected resume text, job description, and relevant prompt or supported empty-field labels/options to the JD Scan API and the configured model provider. Do not use AI features with data you do not want sent to those services.
+- Provider API keys are sent to the Go API service when saving a configuration; the extension does not persist them in its local browser storage.
+- The extension reads supported page content and application fields on websites so it can identify job descriptions and assist with forms. It requests access to HTTP and HTTPS pages for this purpose.
+- Form values that are already filled in are not included in the model prompt. Sensitive or unsupported fields are excluded from automatic filling and require your attention.
 
-- 100% offline processing
-- No external API calls
-- All data stored locally
-- No tracking or analytics
+## Current boundaries
 
-## Documentation
+- Page extraction and form support vary by employer site. The generic reader is a fallback, not a guarantee that every page or form will work.
+- The assistant only fills supported empty text, email, phone, URL, search, textarea, and select fields. It stops when it encounters sensitive questions, unanswered required details, or an unclear next step.
+- File uploads, final review controls, and final submission remain manual.
+- The extension does not inherit MCP servers configured in Codex; MCP tool invocation is not part of this extension build.
+- This repository does not currently include a `LICENSE` file.
 
-See [FEATURES.md](./FEATURES.md) for detailed feature documentation.
+## Development commands
 
-## License
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the Chromium development build |
+| `npm run build` | Build the Chromium extension |
+| `npm run dev:firefox` | Start a Firefox-targeted development build |
+| `npm run build:firefox` | Build for Firefox |
+| `npm run zip` | Package the Chromium build |
+| `npm run compile` | Run the TypeScript compiler without emitting files |
 
-MIT
+## Built with
+
+- [WXT](https://wxt.dev/) for extension development
+- [React](https://react.dev/) and [TypeScript](https://www.typescriptlang.org/) for the interface and application logic
+- [Tailwind CSS](https://tailwindcss.com/) and [Lucide](https://lucide.dev/) for styling and icons
+- [PDF.js](https://mozilla.github.io/pdf.js/) and `pdf-parse` for resume text extraction
+
+## Credits
+
+Created and maintained by [Wahaj](https://github.com/wahajnintyeight). Thanks to everyone who contributes through issues, feedback, and pull requests; the contributor badge above links to the repository's current credits.
+
+Bug reports and focused pull requests are welcome. Please include the browser, the page or form step involved, and what you expected to happen. Do not include API keys or private resume/application data in an issue.

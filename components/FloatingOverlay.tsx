@@ -18,8 +18,8 @@ export default function FloatingOverlay({ onClose, children, initialX, initialY 
   const offset = useRef({ x: 0, y: 0 });
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  const OVERLAY_W = 400;
-  const OVERLAY_H = isMinimized ? 48 : 580;
+  const OVERLAY_W = Math.min(400, Math.max(280, window.innerWidth - 24));
+  const OVERLAY_H = Math.min(isMinimized ? 48 : 580, Math.max(48, window.innerHeight - 24));
 
   const onHeaderMouseDown = useCallback((e: React.MouseEvent) => {
     // Don't start drag on the buttons
@@ -34,7 +34,7 @@ export default function FloatingOverlay({ onClose, children, initialX, initialY 
     const onMouseMove = (me: MouseEvent) => {
       if (!dragging.current) return;
       const newX = Math.max(0, Math.min(window.innerWidth - OVERLAY_W, me.clientX - offset.current.x));
-      const newY = Math.max(0, Math.min(window.innerHeight - 48, me.clientY - offset.current.y));
+      const newY = Math.max(12, Math.min(window.innerHeight - OVERLAY_H - 12, me.clientY - offset.current.y));
       setPos({ x: newX, y: newY });
     };
 
@@ -58,15 +58,14 @@ export default function FloatingOverlay({ onClose, children, initialX, initialY 
         width: OVERLAY_W,
         height: OVERLAY_H,
         zIndex: 2147483646,
-        transition: 'height 0.25s cubic-bezier(0.4,0,0.2,1), width 0.25s cubic-bezier(0.4,0,0.2,1)',
         display: 'flex',
         flexDirection: 'column',
-        borderRadius: 16,
+        borderRadius: 12,
         overflow: 'hidden',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.06)',
-        background: 'var(--background)',
-        color: 'var(--foreground)',
-        fontFamily: 'system-ui, -apple-system, sans-serif',
+        boxShadow: 'var(--jd-shadow-overlay), 0 0 0 1px oklch(var(--jd-border))',
+        background: 'oklch(var(--jd-background))',
+        color: 'oklch(var(--jd-foreground))',
+        fontFamily: 'var(--jd-font-sans)',
         userSelect: dragging.current ? 'none' : 'auto',
       }}
     >
@@ -77,9 +76,10 @@ export default function FloatingOverlay({ onClose, children, initialX, initialY 
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '10px 14px',
-          background: 'linear-gradient(90deg, #0284c7 0%, #0369a1 100%)',
-          color: 'white',
+          padding: '12px 16px',
+          background: 'oklch(var(--jd-card))',
+          color: 'oklch(var(--jd-foreground))',
+          borderBottom: '1px solid oklch(var(--jd-border))',
           cursor: 'grab',
           flexShrink: 0,
           userSelect: 'none',
@@ -93,14 +93,15 @@ export default function FloatingOverlay({ onClose, children, initialX, initialY 
             style={{
               width: 28,
               height: 28,
-              background: 'rgba(255,255,255,0.2)',
+              background: 'oklch(var(--jd-brand-100))',
+              color: 'oklch(var(--jd-brand-700))',
               borderRadius: 8,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 7h18M3 12h18M3 17h18" />
             </svg>
           </div>
@@ -117,14 +118,14 @@ export default function FloatingOverlay({ onClose, children, initialX, initialY 
               borderRadius: 6,
               background: 'transparent',
               border: 'none',
-              color: 'white',
+              color: 'oklch(var(--jd-foreground))',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               transition: 'background 0.15s',
             }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.2)')}
+            onMouseEnter={e => (e.currentTarget.style.background = 'oklch(var(--jd-muted))')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
           >
             {isMinimized
@@ -140,14 +141,14 @@ export default function FloatingOverlay({ onClose, children, initialX, initialY 
               borderRadius: 6,
               background: 'transparent',
               border: 'none',
-              color: 'white',
+              color: 'oklch(var(--jd-foreground))',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               transition: 'background 0.15s',
             }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.2)')}
+            onMouseEnter={e => (e.currentTarget.style.background = 'oklch(var(--jd-muted))')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
           >
             <X style={{ width: 14, height: 14 }} />

@@ -3,36 +3,7 @@
  */
 
 import { getSessionHeaders } from './session';
-
-// Get API base URL from environment or use default
-const getApiBaseUrl = (): string => {
-  // Try to get from import.meta.env (Vite/WXT)
-  try {
-    if (import.meta?.env?.VITE_API_BASE_URL) {
-      const url = import.meta.env.VITE_API_BASE_URL;
-      // Ensure it's an absolute URL
-      if (url.startsWith('http://') || url.startsWith('https://')) {
-        return url;
-      }
-    }
-  } catch (e) {
-    // import.meta might not be available in all contexts
-    console.warn('[API] Failed to access import.meta.env:', e);
-  }
-  
-  // Fallback to default - ensure it's an absolute URL
-  return 'http://localhost:8881/v2/api';
-};
-
-const API_BASE_URL = getApiBaseUrl();
-
-// Debug log to verify API URL is set correctly
-console.log('[API] Base URL:', API_BASE_URL);
-
-// Validate that we have a proper URL
-if (!API_BASE_URL.startsWith('http://') && !API_BASE_URL.startsWith('https://')) {
-  console.error('[API] Invalid API base URL - must be absolute:', API_BASE_URL);
-}
+import { API_BASE_URL, apiFetch } from './apiTransport';
 
 export interface LLMProvider {
   value: string;
@@ -55,6 +26,35 @@ export const LLM_PROVIDERS: LLMProvider[] = [
     value: 'groq',
     label: 'Groq',
     models: ['llama-3.1-70b', 'llama-3.1-8b', 'mixtral-8x7b'],
+  },
+  {
+    value: 'huggingface',
+    label: 'Hugging Face Inference Providers',
+    models: [
+      'openai/gpt-oss-120b:fastest',
+      'deepseek-ai/DeepSeek-R1:novita',
+      'zai-org/GLM-5.3:baseten',
+    ],
+  },
+  {
+    value: 'xai',
+    label: 'xAI (Grok)',
+    models: ['grok-4.7'],
+  },
+  {
+    value: 'mistral',
+    label: 'Mistral AI',
+    models: ['mistral-large-latest', 'mistral-medium-latest', 'mistral-small-latest', 'devstral-latest'],
+  },
+  {
+    value: 'deepseek',
+    label: 'DeepSeek',
+    models: ['deepseek-flash', 'deepseek-v4-pro'],
+  },
+  {
+    value: 'gemini',
+    label: 'Google Gemini',
+    models: ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-pro-preview'],
   },
   {
     value: 'openrouter',
@@ -146,6 +146,11 @@ export interface TestConnectionResult {
   error?: string;
 }
 
+export interface LLMChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
 /**
  * Check if API response is successful
  */
@@ -159,14 +164,21 @@ function isSuccessResponse(code: number): boolean {
 export async function fetchLLMConfigs(): Promise<LLMAPIConfig[]> {
   try {
     const headers = await getSessionHeaders();
-    const response = await fetch(`${API_BASE_URL}/llm-api-configs`, {
+    const response = await apiFetch(`${API_BASE_URL}/llm-api-configs`, {
       headers,
     });
     const data: ApiResponse<LLMAPIConfig[] | null> = await response.json();
     
     if (isSuccessResponse(data.code)) {
-      // Handle null result (no configs yet) by returning empty array
-      return data.result || [];
+      const seen = new Set<string>();
+      return (Array.isArray(data.result) ? data.result : []).filter((config) => {
+        if (!config || typeof config.id !== 'string' || !config.id.trim() || seen.has(config.id)) {
+          console.error('Ignoring an LLM configuration with a missing or duplicate ID. Update the backend.');
+          return false;
+        }
+        seen.add(config.id);
+        return true;
+      });
     }
     return [];
   } catch (error) {
@@ -181,7 +193,7 @@ export async function fetchLLMConfigs(): Promise<LLMAPIConfig[]> {
 export async function createLLMConfig(config: CreateLLMConfigRequest): Promise<{ success: boolean; data?: LLMAPIConfig; error?: string }> {
   try {
     const headers = await getSessionHeaders();
-    const response = await fetch(`${API_BASE_URL}/llm-api-config`, {
+    const response = await apiFetch(`${API_BASE_URL}/llm-api-config`, {
       method: 'POST',
       headers,
       body: JSON.stringify(config),
@@ -206,7 +218,7 @@ export async function createLLMConfig(config: CreateLLMConfigRequest): Promise<{
 export async function updateLLMConfig(id: string, config: Partial<CreateLLMConfigRequest>): Promise<{ success: boolean; error?: string }> {
   try {
     const headers = await getSessionHeaders();
-    const response = await fetch(`${API_BASE_URL}/llm-api-config?id=${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/llm-api-config?id=${id}`, {
       method: 'PUT',
       headers,
       body: JSON.stringify(config),
@@ -231,7 +243,7 @@ export async function updateLLMConfig(id: string, config: Partial<CreateLLMConfi
 export async function deleteLLMConfig(id: string): Promise<{ success: boolean; error?: string }> {
   try {
     const headers = await getSessionHeaders();
-    const response = await fetch(`${API_BASE_URL}/llm-api-config?id=${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/llm-api-config?id=${id}`, {
       method: 'DELETE',
       headers,
     });
@@ -255,7 +267,7 @@ export async function deleteLLMConfig(id: string): Promise<{ success: boolean; e
 export async function testLLMConnection(provider: string, model: string, apiKey: string): Promise<{ success: boolean; message: string; error?: string; usage?: any }> {
   try {
     const headers = await getSessionHeaders();
-    const response = await fetch(`${API_BASE_URL}/gollm/test-connection`, {
+    const response = await apiFetch(`${API_BASE_URL}/gollm/test-connection`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -311,7 +323,7 @@ export async function scanResumeATS(
 ): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
     const headers = await getSessionHeaders();
-    const response = await fetch(`${API_BASE_URL}/gollm/ats/scan`, {
+    const response = await apiFetch(`${API_BASE_URL}/gollm/ats/scan`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -336,13 +348,59 @@ export async function scanResumeATS(
   }
 }
 
+/** Generate a non-streaming chat response with a saved provider configuration. */
+export async function createLLMChatCompletion(
+  apiId: string,
+  messages: LLMChatMessage[],
+  maxTokens = 1800,
+): Promise<{ success: boolean; text?: string; error?: string }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 90_000);
+
+  try {
+    const headers = await getSessionHeaders();
+    const response = await apiFetch(`${API_BASE_URL}/gollm/chat/completions`, {
+      method: 'POST',
+      headers,
+      signal: controller.signal,
+      body: JSON.stringify({ api_id: apiId, messages, maxTokens, temperature: 0.4 }),
+    });
+    const data: ApiResponse<any> = await response.json();
+
+    if (!response.ok || !isSuccessResponse(data.code)) {
+      return { success: false, error: data.message || `AI request failed (${response.status})` };
+    }
+
+    const result = data.result;
+    const text = typeof result === 'string'
+      ? result
+      : result?.choices?.[0]?.message?.content
+        ?? result?.message?.content
+        ?? result?.content
+        ?? result?.response;
+
+    return typeof text === 'string' && text.trim()
+      ? { success: true, text: text.trim() }
+      : { success: false, error: 'The AI provider returned an empty response.' };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error && error.name === 'AbortError'
+        ? 'The AI request timed out. Try again or choose another provider.'
+        : error instanceof Error ? error.message : 'Network error',
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 /**
  * Fetch available models from OpenRouter
  */
 export async function fetchOpenRouterModels(apiKey: string): Promise<{ success: boolean; models?: OpenRouterModel[]; count?: number; error?: string }> {
   try {
     const headers = await getSessionHeaders();
-    const response = await fetch(`${API_BASE_URL}/gollm/fetch-models`, {
+    const response = await apiFetch(`${API_BASE_URL}/gollm/fetch-models`, {
       method: 'POST',
       headers,
       body: JSON.stringify({

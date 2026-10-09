@@ -32,10 +32,10 @@ let currentMql: MediaQueryList | null = null;
  * - "dark": always add `dark`
  * - "auto": follow system preference via prefers-color-scheme
  */
-export function applyColorMode(colorMode: UserSettings['colorMode']) {
+export function applyColorMode(colorMode: UserSettings['colorMode'], target?: HTMLElement) {
   if (typeof document === 'undefined') return;
 
-  const root = document.documentElement;
+  const root = target ?? document.documentElement;
 
   // Cleanup old listener if it exists
   if (currentMql && mqlListener) {
