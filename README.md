@@ -78,17 +78,22 @@ For a production build:
 npm run build
 ```
 
-In Chrome, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select `.output/chrome-mv3-dev` for the development build or `.output/chrome-mv3` for the production build. Reload the extension after a production rebuild.
+In Chrome, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select `.output/chrome-mv3-dev` for the development build or `.output/chrome-mv3` for the production build. After a production rebuild, reload the extension, refresh the job website, and close and reopen the assistant. Reloading the extension does not replace code already injected into an open website.
+
+If tab actions fail, check that the installed extension is **JD Scan 1.2.3**, loaded from the folder you just built. Refresh every job tab that had the floating assistant open. Keep the job website active while using the side panel; a standalone dashboard tab cannot operate on itself.
 
 ## Use JD Scan
 
 1. Open the extension and add one or more resumes in the resume library.
 2. In Settings, add a provider configuration, test it, and save it. Choose which active configuration to use for scans and drafting.
 3. Open a job posting. JD Scan extracts supported job details automatically, or you can provide the description yourself.
+   You can also paste a URL in **Open a job link**. The extension opens the page, captures its description, saves the job context, and displays the prepared role. SmartRecruiters OneClick application links retrieve the matching description through the [public Posting API](https://developers.smartrecruiters.com/docs/endpoints), even when the form page does not display the job description.
 4. Review the match and missing keywords, then open the application workspace to draft content or work through the form.
 5. Review every answer on the employer's site and submit the application yourself.
 
 The application assistant works with the active browser tab. It can click a clearly identified Apply, Next, or Continue action when the page and form pass its safety checks. It does not submit the final application or upload files for you.
+
+Run uses the selected resume and prepared job description to answer supported fields. The background worker continues the pass across document navigation and saves progress for the floating view. Switching to another tab stops it before the next page action. SmartRecruiters text fields inside open shadow roots are supported; its custom city picker and phone/country control require manual input.
 
 ## Data and permissions
 
@@ -116,6 +121,8 @@ The application assistant works with the active browser tab. It can click a clea
 | `npm run build:firefox` | Build for Firefox |
 | `npm run zip` | Package the Chromium build |
 | `npm run compile` | Run the TypeScript compiler without emitting files |
+| `npm run test:browser-tabs` | Check UI-to-worker tab routing and target validation |
+| `npm run test:job-flow` | Check link preparation, shadow-root fields, and navigation during an application run |
 
 ## Built with
 

@@ -229,26 +229,27 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
         className="settings-modal-dialog relative w-full max-w-4xl max-h-[90dvh] bg-background rounded-3xl shadow-2xl overflow-hidden flex flex-col"
       >
         {/* Header */}
-        <div className="settings-modal-header relative flex items-center justify-between px-8 py-6 border-b border-border/50">
+        <div className="settings-modal-header relative flex items-center justify-between px-6 py-4 border-b border-border/50">
           <div>
-            <h2 className="text-2xl font-black tracking-tight text-foreground">
+            <h2 className="text-xl font-black tracking-tight text-foreground">
               Settings
             </h2>
-            <p className="text-sm text-muted-foreground mt-1">Control how JD Scan works</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Control how JD Scan works</p>
           </div>
           <button
             onClick={onClose}
-            className="p-2.5 hover:bg-muted rounded-xl transition-colors active:scale-95 group"
+            className="p-2 hover:bg-muted rounded-lg transition-colors active:scale-95 group"
           >
             <X className="w-5 h-5 text-muted-foreground group-hover:text-foreground" />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="settings-modal-tabs relative flex gap-2 px-8 pt-4 bg-muted/30">
+        <nav aria-label="Settings sections" className="settings-modal-tabs relative flex gap-1 px-6 pt-2 bg-muted/30">
           <button
             onClick={() => setActiveTab('general')}
-            className={`relative flex items-center gap-2 px-6 py-3 text-sm font-bold rounded-t-xl transition-colors ${
+            aria-pressed={activeTab === 'general'}
+            className={`relative flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-t-lg transition-colors ${
               activeTab === 'general'
                 ? 'bg-background text-brand-600 shadow-sm'
                 : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
@@ -265,7 +266,8 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
           </button>
           <button
             onClick={() => setActiveTab('llm')}
-            className={`relative flex items-center gap-2 px-6 py-3 text-sm font-bold rounded-t-xl transition-colors ${
+            aria-pressed={activeTab === 'llm'}
+            className={`relative flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-t-lg transition-colors ${
               activeTab === 'llm'
                 ? 'bg-background text-brand-600 shadow-sm'
                 : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
@@ -280,7 +282,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
               />
             )}
           </button>
-        </div>
+        </nav>
 
         {/* Content */}
         <div data-settings-modal-content className="flex-1 overflow-y-auto bg-background">
@@ -292,20 +294,20 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 20 }}
                 data-settings-modal-panel
-                className="p-8 space-y-8"
+                className="p-6 space-y-6"
               >
                 {/* Display Mode */}
                 <section>
-                  <div className="flex items-center gap-2 mb-5">
-                    <div className="p-2 bg-brand-100 dark:bg-brand-900/30 rounded-lg">
-                      <Layout className="w-4 h-4 text-brand-600" />
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="p-1.5 bg-brand-100 dark:bg-brand-900/30 rounded-md">
+                      <Layout className="w-3.5 h-3.5 text-brand-600" />
                     </div>
                     <div>
-                      <h3 className="text-base font-bold text-foreground">Display Mode</h3>
-                      <p className="text-xs text-muted-foreground">Choose how JD Scan appears</p>
+                      <h3 className="text-sm font-bold text-foreground">Display Mode</h3>
+                      <p className="text-[11px] text-muted-foreground">Choose how JD Scan appears</p>
                     </div>
                   </div>
-                  <div className="settings-choice-grid grid grid-cols-2 gap-4">
+                  <div className="settings-choice-grid grid grid-cols-2 gap-3">
                     {[
                       { id: 'sidebar', label: 'Sidebar Panel', desc: 'Docked to browser side', icon: Layout },
                       { id: 'overlay', label: 'Floating Button', desc: 'Minimal overlay on pages', icon: Layers },
@@ -313,28 +315,28 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                       <button
                         key={mode.id}
                         onClick={() => onSettingsChange({ displayMode: mode.id as any })}
-                        className={`relative p-6 rounded-2xl border-2 transition-colors text-left overflow-hidden ${
+                        className={`relative p-4 rounded-xl border transition-colors text-left overflow-hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${
                           settings.displayMode === mode.id
                             ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 shadow-lg'
                             : 'border-border hover:border-brand-300 hover:bg-muted/50'
                         }`}
                       >
                         {settings.displayMode === mode.id && (
-                          <div className="absolute top-3 right-3">
+                          <div className="absolute top-2 right-2">
                             <div className="p-1 bg-brand-500 rounded-full">
                               <CheckCircle2 className="w-3 h-3 text-white" />
                             </div>
                           </div>
                         )}
-                        <mode.icon className={`w-8 h-8 mb-3 ${
+                        <mode.icon className={`w-6 h-6 mb-2 ${
                           settings.displayMode === mode.id ? 'text-brand-600' : 'text-muted-foreground'
                         }`} />
-                        <p className={`text-sm font-bold mb-1 ${
+                        <p className={`text-xs font-bold mb-0.5 ${
                           settings.displayMode === mode.id ? 'text-brand-700 dark:text-brand-400' : 'text-foreground'
                         }`}>
                           {mode.label}
                         </p>
-                        <p className="text-xs text-muted-foreground">{mode.desc}</p>
+                        <p className="text-[11px] text-muted-foreground">{mode.desc}</p>
                       </button>
                     ))}
                   </div>
@@ -342,16 +344,16 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
 
                 {/* Appearance */}
                 <section>
-                  <div className="flex items-center gap-2 mb-5">
-                    <div className="p-2 bg-brand-100 dark:bg-brand-900/30 rounded-lg">
-                      <Sun className="w-4 h-4 text-brand-600" />
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="p-1.5 bg-brand-100 dark:bg-brand-900/30 rounded-md">
+                      <Sun className="w-3.5 h-3.5 text-brand-600" />
                     </div>
                     <div>
-                      <h3 className="text-base font-bold text-foreground">Appearance</h3>
-                      <p className="text-xs text-muted-foreground">Select your theme preference</p>
+                      <h3 className="text-sm font-bold text-foreground">Appearance</h3>
+                      <p className="text-[11px] text-muted-foreground">Select your theme preference</p>
                     </div>
                   </div>
-                  <div className="settings-appearance-grid flex gap-2 rounded-lg border border-border bg-muted/50 p-1">
+                  <div className="settings-appearance-grid flex gap-1 rounded-lg border border-border bg-muted/50 p-1">
                     {[
                       { id: 'light', label: 'Light', icon: Sun },
                       { id: 'dark', label: 'Dark', icon: Moon },
@@ -361,13 +363,13 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                         key={mode.id}
                         onClick={() => onSettingsChange({ colorMode: mode.id as any })}
                         aria-pressed={settings.colorMode === mode.id}
-                        className={`flex min-w-0 flex-1 items-center justify-center gap-2 rounded-md px-2 py-3 text-xs font-semibold transition-colors ${
+                        className={`flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-2 text-xs font-semibold transition-colors ${
                           settings.colorMode === mode.id
                             ? 'bg-background text-brand-700 shadow-sm dark:text-brand-300'
                             : 'text-muted-foreground hover:bg-background/70 hover:text-foreground'
                         }`}
                       >
-                        <mode.icon className={`h-4 w-4 shrink-0 ${
+                        <mode.icon className={`h-3.5 w-3.5 shrink-0 ${
                           settings.colorMode === mode.id ? 'text-brand-600' : 'text-muted-foreground'
                         }`} />
                         <p className={`whitespace-nowrap text-xs font-bold ${

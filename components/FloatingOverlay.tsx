@@ -1,14 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { X, Minimize2, Maximize2 } from 'lucide-react';
+import { X, Minimize2, Maximize2, Settings } from 'lucide-react';
 
 interface FloatingOverlayProps {
   onClose: () => void;
+  onOpenSettings?: () => void;
   children: React.ReactNode;
   initialX?: number;
   initialY?: number;
 }
 
-export default function FloatingOverlay({ onClose, children, initialX, initialY }: FloatingOverlayProps) {
+export default function FloatingOverlay({ onClose, onOpenSettings, children, initialX, initialY }: FloatingOverlayProps) {
   const [isMinimized, setIsMinimized] = useState(false);
   const [pos, setPos] = useState({
     x: initialX ?? Math.max(window.innerWidth - 420, 0),
@@ -19,7 +20,7 @@ export default function FloatingOverlay({ onClose, children, initialX, initialY 
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const OVERLAY_W = Math.min(400, Math.max(280, window.innerWidth - 24));
-  const OVERLAY_H = Math.min(isMinimized ? 48 : 580, Math.max(48, window.innerHeight - 24));
+  const OVERLAY_H = Math.min(isMinimized ? 40 : 580, Math.max(40, window.innerHeight - 24));
 
   const onHeaderMouseDown = useCallback((e: React.MouseEvent) => {
     // Don't start drag on the buttons
@@ -76,7 +77,7 @@ export default function FloatingOverlay({ onClose, children, initialX, initialY 
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '12px 16px',
+          padding: '4px 10px',
           background: 'oklch(var(--jd-card))',
           color: 'oklch(var(--jd-foreground))',
           borderBottom: '1px solid oklch(var(--jd-border))',
@@ -84,15 +85,15 @@ export default function FloatingOverlay({ onClose, children, initialX, initialY 
           flexShrink: 0,
           userSelect: 'none',
           WebkitUserSelect: 'none',
-          minHeight: 48,
+          height: 40,
           boxSizing: 'border-box',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div
             style={{
-              width: 28,
-              height: 28,
+              width: 24,
+              height: 24,
               background: 'oklch(var(--jd-brand-100))',
               color: 'oklch(var(--jd-brand-700))',
               borderRadius: 8,
@@ -105,13 +106,26 @@ export default function FloatingOverlay({ onClose, children, initialX, initialY 
               <path d="M3 7h18M3 12h18M3 17h18" />
             </svg>
           </div>
-          <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: '-0.01em' }}>JD Scan</span>
+          <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.01em' }}>JD Scan</span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          {onOpenSettings && (
+            <button
+              onClick={onOpenSettings}
+              title="Settings"
+              aria-label="Open settings"
+              style={{ width: 32, height: 32, borderRadius: 6, background: 'transparent', border: 'none', color: 'oklch(var(--jd-foreground))', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'oklch(var(--jd-muted))')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            >
+              <Settings aria-hidden="true" style={{ width: 14, height: 14 }} />
+            </button>
+          )}
           <button
             onClick={() => setIsMinimized(!isMinimized)}
             title={isMinimized ? 'Expand' : 'Minimize'}
+            aria-label={isMinimized ? 'Expand assistant' : 'Minimize assistant'}
             style={{
               width: 28,
               height: 28,
@@ -135,6 +149,7 @@ export default function FloatingOverlay({ onClose, children, initialX, initialY 
           <button
             onClick={onClose}
             title="Close"
+            aria-label="Close assistant"
             style={{
               width: 28,
               height: 28,

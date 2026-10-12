@@ -255,10 +255,11 @@ export default function App() {
         {/* Main Content Card */}
         <div className="settings-workbench__panel bg-card rounded-3xl shadow-xl overflow-hidden border border-border/50">
           {/* Tabs */}
-          <div className="flex gap-2 px-8 pt-6 bg-muted/30 border-b border-border/50">
+          <nav aria-label="Settings sections" className="flex gap-1 px-6 pt-2 bg-muted/30 border-b border-border/50">
             <button
               onClick={() => setActiveTab('general')}
-              className={`relative flex items-center gap-2 px-6 py-3 text-sm font-bold rounded-t-xl transition-colors ${
+              aria-pressed={activeTab === 'general'}
+              className={`relative flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-t-lg transition-colors ${
                 activeTab === 'general'
                   ? 'bg-background text-brand-600 shadow-sm'
                   : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
@@ -275,7 +276,8 @@ export default function App() {
             </button>
             <button
               onClick={() => setActiveTab('llm')}
-              className={`relative flex items-center gap-2 px-6 py-3 text-sm font-bold rounded-t-xl transition-colors ${
+              aria-pressed={activeTab === 'llm'}
+              className={`relative flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-t-lg transition-colors ${
                 activeTab === 'llm'
                   ? 'bg-background text-brand-600 shadow-sm'
                   : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
@@ -290,7 +292,7 @@ export default function App() {
                 />
               )}
             </button>
-          </div>
+          </nav>
 
           {/* Content */}
           <div data-settings-content className="min-h-[600px] max-h-[80dvh] overflow-y-auto">
@@ -301,20 +303,20 @@ export default function App() {
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: 20 }}
-                  className="p-8 pb-12 space-y-8"
+                  className="p-6 pb-8 space-y-6"
                 >
                   {/* Display Mode */}
                   <section>
-                    <div className="flex items-center gap-2 mb-5">
-                      <div className="p-2 bg-brand-100 dark:bg-brand-900/30 rounded-lg">
-                        <Layout className="w-4 h-4 text-brand-600" />
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="p-1.5 bg-brand-100 dark:bg-brand-900/30 rounded-md">
+                        <Layout className="w-3.5 h-3.5 text-brand-600" />
                       </div>
                       <div>
-                        <h3 className="text-base font-bold text-foreground">Display Mode</h3>
-                        <p className="text-xs text-muted-foreground">Choose how JD Scan appears</p>
+                        <h3 className="text-sm font-bold text-foreground">Display Mode</h3>
+                        <p className="text-[11px] text-muted-foreground">Choose how JD Scan appears</p>
                       </div>
                     </div>
-                    <div className="settings-choice-grid grid grid-cols-2 gap-4">
+                    <div className="settings-choice-grid grid grid-cols-2 gap-3">
                       {[
                         { id: 'sidebar', label: 'Sidebar Panel', desc: 'Docked to browser side', icon: Layout },
                         { id: 'overlay', label: 'Floating Button', desc: 'Minimal overlay on pages', icon: Layers },
@@ -322,28 +324,28 @@ export default function App() {
                         <button
                           key={mode.id}
                           onClick={() => handleSettingsChange({ displayMode: mode.id as any })}
-                          className={`relative p-6 rounded-2xl border-2 transition-colors text-left overflow-hidden ${
+                          className={`relative p-4 rounded-xl border transition-colors text-left overflow-hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${
                             settings.displayMode === mode.id
                               ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 shadow-lg'
                               : 'border-border hover:border-brand-300 hover:bg-muted/50'
                           }`}
                         >
                           {settings.displayMode === mode.id && (
-                            <div className="absolute top-3 right-3">
+                            <div className="absolute top-2 right-2">
                               <div className="p-1 bg-brand-500 rounded-full">
                                 <CheckCircle2 className="w-3 h-3 text-white" />
                               </div>
                             </div>
                           )}
-                          <mode.icon className={`w-8 h-8 mb-3 ${
+                          <mode.icon className={`w-6 h-6 mb-2 ${
                             settings.displayMode === mode.id ? 'text-brand-600' : 'text-muted-foreground'
                           }`} />
-                          <p className={`text-sm font-bold mb-1 ${
+                          <p className={`text-xs font-bold mb-0.5 ${
                             settings.displayMode === mode.id ? 'text-brand-700 dark:text-brand-400' : 'text-foreground'
                           }`}>
                             {mode.label}
                           </p>
-                          <p className="text-xs text-muted-foreground">{mode.desc}</p>
+                          <p className="text-[11px] text-muted-foreground">{mode.desc}</p>
                         </button>
                       ))}
                     </div>
@@ -351,16 +353,16 @@ export default function App() {
 
                   {/* Appearance */}
                   <section>
-                    <div className="flex items-center gap-2 mb-5">
-                      <div className="p-2 bg-brand-100 dark:bg-brand-900/30 rounded-lg">
-                        <Sun className="w-4 h-4 text-brand-600" />
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="p-1.5 bg-brand-100 dark:bg-brand-900/30 rounded-md">
+                        <Sun className="w-3.5 h-3.5 text-brand-600" />
                       </div>
                       <div>
-                        <h3 className="text-base font-bold text-foreground">Appearance</h3>
-                        <p className="text-xs text-muted-foreground">Select your theme preference</p>
+                        <h3 className="text-sm font-bold text-foreground">Appearance</h3>
+                        <p className="text-[11px] text-muted-foreground">Select your theme preference</p>
                       </div>
                     </div>
-                    <div className="settings-appearance-grid flex gap-2 rounded-lg border border-border bg-muted/50 p-1">
+                    <div className="settings-appearance-grid flex gap-1 rounded-lg border border-border bg-muted/50 p-1">
                       {[
                         { id: 'light', label: 'Light', icon: Sun },
                         { id: 'dark', label: 'Dark', icon: Moon },
@@ -370,13 +372,13 @@ export default function App() {
                           key={mode.id}
                           onClick={() => handleSettingsChange({ colorMode: mode.id as any })}
                           aria-pressed={settings.colorMode === mode.id}
-                          className={`flex min-w-0 flex-1 items-center justify-center gap-2 rounded-md px-2 py-3 text-xs font-semibold transition-colors ${
+                          className={`flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-2 text-xs font-semibold transition-colors ${
                             settings.colorMode === mode.id
                               ? 'bg-background text-brand-700 shadow-sm dark:text-brand-300'
                               : 'text-muted-foreground hover:bg-background/70 hover:text-foreground'
                           }`}
                         >
-                          <mode.icon className={`h-4 w-4 shrink-0 ${
+                          <mode.icon className={`h-3.5 w-3.5 shrink-0 ${
                             settings.colorMode === mode.id ? 'text-brand-600' : 'text-muted-foreground'
                           }`} />
                           <p className={`whitespace-nowrap text-xs font-bold ${

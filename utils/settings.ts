@@ -102,19 +102,8 @@ export async function saveSettings(settings: Partial<UserSettings>): Promise<voi
     chrome.storage?.local?.get('userSettings', (data) => {
       const updated = { ...DEFAULT_SETTINGS, ...(data?.userSettings || {}), ...settings };
       chrome.storage?.local?.set({ userSettings: updated }, () => {
-        // Broadcast settings change to all tabs
-        chrome.tabs?.query({}, (tabs) => {
-          tabs.forEach((tab) => {
-            if (tab.id) {
-              chrome.tabs.sendMessage(tab.id, {
-                type: 'SETTINGS_UPDATED',
-                settings: updated,
-              }).catch(() => {
-                // Ignore errors for tabs that don't have content script
-              });
-            }
-          });
-        });
+        // Website overlays already observe storage changes; notify extension pages too.
+        chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', settings: updated }).catch(() => {});
         resolve();
       });
     });

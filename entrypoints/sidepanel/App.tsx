@@ -6,12 +6,9 @@ import {
     CheckCircle2,
     AlertCircle,
     ChevronRight,
-    TrendingUp,
-    History,
     Settings,
     CloudUpload,
     Sparkles,
-    Files,
     GripVertical,
     RefreshCw,
     PencilLine,
@@ -27,6 +24,7 @@ import { ACCEPTED_MIMES, getFileTypeConfig } from "../../components/sidepanel/re
 import { JobData, Resume, ScanResult, UploadingFile } from "../../components/sidepanel/types";
 import SettingsModal from "../../components/SettingsModal";
 import ApplicationAgent from "../../components/ApplicationAgent";
+import { getActiveBrowserTab, sendBrowserTabMessage } from "../../utils/browserTabs";
 import AnalysisReport from "../../components/sidepanel/AnalysisReport";
 import HistoryTab from "../../components/sidepanel/HistoryTab";
 import ResumeLibraryTab from "../../components/sidepanel/ResumeLibraryTab";
@@ -34,7 +32,7 @@ import FloatingOverlay from "../../components/FloatingOverlay";
 import FloatingButton from "../../components/FloatingButton";
 import HighlightedJobDescription from "../../components/HighlightedJobDescription";
 import { extractTextFromPDF } from "../../utils/pdfProcessor";
-import { highlightInDOM, injectHighlightStyles, removeHighlighting } from "../../utils/keywordHighlighter";
+import { highlightInDOM, injectHighlightStyles } from "../../utils/keywordHighlighter";
 
 export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement } = {}) {
     // Detect if we're running in a content script context or sidepanel/popup
@@ -131,7 +129,15 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
         };
 
         // Listen for storage changes (reliable fallback)
+        const restoreRunningOverlay = (record: any) => {
+            if (!isContentScript || !record?.running || Date.now() - record.timestamp > 300000) return;
+            void getActiveBrowserTab().then(tab => {
+                if (tab.id === record.tabId) setIsOverlayExpanded(true);
+            }).catch(() => {});
+        };
+        chrome.storage.local.get('jdScan_applicationRun', data => restoreRunningOverlay(data.jdScan_applicationRun));
         const storageListener = (changes: any, namespace: string) => {
+            if (namespace === 'local' && changes.jdScan_applicationRun) restoreRunningOverlay(changes.jdScan_applicationRun.newValue);
             if (namespace === 'local' && changes.userSettings) {
                 const updated = { ...DEFAULT_SETTINGS, ...changes.userSettings.newValue };
                 setSettings(updated);
@@ -183,54 +189,16 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
                 return;
             }
             
-            // If we're in sidepanel/popup, send message to content script
-            if (typeof chrome === 'undefined' || !chrome.tabs) {
-                console.error("JD Scan: Chrome API not available");
-                return;
-            }
-            
-            const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-            if (tabs[0]?.id) {
-                const response = await chrome.tabs.sendMessage(tabs[0].id, {
-                    type: "HIGHLIGHT_KEYWORDS",
-                    resumeContent
-                });
-                
-                if (response?.success) {
-                    console.log("JD Scan: Highlighting applied successfully", response.result);
-                } else {
-                    console.error("JD Scan: Highlighting failed", response?.error);
-                }
+            const tab = await getActiveBrowserTab();
+            const response = await sendBrowserTabMessage(tab.id, {
+                type: "HIGHLIGHT_KEYWORDS",
+                resumeContent
+            });
+            if (!response?.success) {
+                throw new Error(response?.error || 'Could not highlight this page.');
             }
         } catch (error) {
-            console.error("JD Scan: Failed to send highlight message", error);
-        }
-    };
-
-    const removeHighlightsFromPage = async () => {
-        try {
-            // If we're in a content script context, remove highlights directly from the DOM
-            if (isContentScript) {
-                const jobElements = document.querySelectorAll('[data-ui="job-description"], .job-description, .jobs-description__content, .jobs-description-content__text, main section, main article');
-                if (jobElements.length > 0) {
-                    removeHighlighting(jobElements[0] as Element);
-                    console.log("JD Scan: Highlights removed successfully in content script");
-                }
-                return;
-            }
-            
-            // If we're in sidepanel/popup, send message to content script
-            if (typeof chrome === 'undefined' || !chrome.tabs) {
-                console.error("JD Scan: Chrome API not available");
-                return;
-            }
-            
-            const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-            if (tabs[0]?.id) {
-                await chrome.tabs.sendMessage(tabs[0].id, { type: "REMOVE_HIGHLIGHTS" });
-            }
-        } catch (error) {
-            console.error("JD Scan: Failed to remove highlights", error);
+            setScanError(error instanceof Error ? error.message : 'Could not highlight this page.');
         }
     };
 
@@ -409,45 +377,20 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
         [selectedResumes]
     );
 
-    const fetchPageJD = () => {
-        // If we're in a content script context, extract job data directly
-        if (isContentScript) {
-            // The extractJobData function is defined in the content script
-            // We need to access it from the global scope or re-implement it
-            // For now, let's try to get it from the page
-            const jobElements = document.querySelectorAll('[data-ui="job-description"], .job-description, .jobs-description__content, .jobs-description-content__text');
-            if (jobElements.length > 0) {
-                const jd = (jobElements[0] as HTMLElement).innerText || jobElements[0].textContent || "";
-                const titleEl = document.querySelector('[data-ui="job-title"], .job-title, h1');
-                const companyEl = document.querySelector('[data-ui="company-name"], .company-name');
-                
-                setJobData({
-                    jd: jd.trim(),
-                    title: titleEl?.textContent?.trim() || "",
-                    company: companyEl?.textContent?.trim() || ""
-                });
+    const fetchPageJD = async () => {
+        setScanError('');
+        try {
+            const tab = await getActiveBrowserTab();
+            const response = await sendBrowserTabMessage(tab.id, { type: "GET_JD" });
+            if (response?.data?.jd) {
+                setJobData(response.data);
                 setIsManualMode(false);
-                console.log("JD Scan: Extracted job data directly from page");
+            } else {
+                setScanError('No job description found on this page. Open a job posting or enter it manually.');
             }
-            return;
+        } catch (error) {
+            setScanError(error instanceof Error ? error.message : 'Could not read the job page.');
         }
-        
-        // If we're in sidepanel/popup, send message to content script
-        if (typeof chrome === 'undefined' || !chrome.tabs) {
-            console.error("JD Scan: Chrome API not available");
-            return;
-        }
-        
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs: any[]) => {
-            if (tabs[0]?.id) {
-                chrome.tabs.sendMessage(tabs[0].id, { type: "GET_JD" }, (response: any) => {
-                    if (response?.data?.jd) {
-                        setJobData(response.data);
-                        setIsManualMode(false);
-                    }
-                });
-            }
-        });
     };
 
     const startAIScan = async () => {
@@ -519,6 +462,8 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
         }
     };
 
+    const isFloatingView = isContentScript || settings.displayMode === 'overlay';
+
     const mainContent = (
         <div
             className="flex flex-col h-full max-w-[400px] mx-auto bg-background premium-scrollbar overflow-hidden relative"
@@ -538,54 +483,38 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
                 </div>
             )}
 
-            {/* Header */}
-            <header className="px-6 py-5 bg-card border-b border-border flex items-center justify-between sticky top-0 z-10">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-brand-600 rounded-xl flex items-center justify-center shadow-lg shadow-brand-200/50">
-                        <ScanLine className="w-6 h-6 text-white" />
-                    </div>
-                    <div>
-                        <h1 className="text-xl font-bold text-foreground font-display">JD Scan</h1>
-                        <p className="text-[10px] text-brand-600 font-bold uppercase tracking-widest">Pro Edition</p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-1">
-                    {resumes.length > 0 && (
-                        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-brand-50 dark:bg-brand-900/30 rounded-lg mr-1">
-                            <Files className="w-3.5 h-3.5 text-brand-600" />
-                            <span className="text-xs font-bold text-brand-700 dark:text-brand-400">{resumes.length}</span>
-                        </div>
-                    )}
-                    <button
-                        onClick={() => setShowSettings(true)}
-                        className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
-                        title="Settings"
-                    >
-                        <Settings className="w-5 h-5" />
+            {/* The floating window already supplies its title and controls. */}
+            {!isFloatingView && (
+                <header className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-card px-3">
+                    <h1 className="flex items-center gap-2 text-sm font-bold text-foreground font-display">
+                        <ScanLine aria-hidden="true" className="h-4 w-4 text-primary" />
+                        JD Scan
+                    </h1>
+                    <button onClick={() => setShowSettings(true)} className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" title="Settings" aria-label="Open settings">
+                        <Settings aria-hidden="true" className="h-4 w-4" />
                     </button>
-                </div>
-            </header>
-
+                </header>
+            )}
             {/* Tabs Navigation */}
-            <nav className="dashboard-tabs flex px-4 pt-4 pb-2 bg-card gap-2">
+            <nav aria-label="Workspace sections" className="dashboard-tabs grid grid-cols-[1fr_1fr_1.35fr_1fr] shrink-0 items-center gap-1 border-b border-border bg-card px-2 py-1">
                 {[
-                    { id: 'agent', label: 'Apply', icon: Cpu },
-                    { id: 'match', label: 'Match', icon: TrendingUp },
-                    { id: 'resumes', label: 'Resumes', icon: FileText, badge: resumes.length || undefined },
-                    { id: 'history', label: 'History', icon: History },
+                    { id: 'agent', label: 'Apply' },
+                    { id: 'match', label: 'Match' },
+                    { id: 'resumes', label: 'Resumes', badge: resumes.length || undefined },
+                    { id: 'history', label: 'History' },
                 ].map((tab) => (
                     <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id as any)}
-                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-colors duration-200 relative ${activeTab === tab.id
+                        aria-current={activeTab === tab.id ? 'page' : undefined}
+                        className={`flex-1 flex items-center justify-center min-w-0 gap-1.5 h-8 rounded-md text-xs font-semibold transition-colors duration-200 relative focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${activeTab === tab.id
                             ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 shadow-sm border border-brand-100 dark:border-brand-900'
                             : 'text-muted-foreground hover:bg-muted/50'
                             }`}
                     >
-                        <tab.icon className="w-4 h-4" />
                         {tab.label}
                         {tab.badge && tab.badge > 0 && (
-                            <span className="absolute -top-1 -right-1 w-5 h-5 bg-brand-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center shadow-sm">
+                            <span className="inline-flex shrink-0 items-center justify-center h-4 min-w-4 px-1 bg-brand-600 text-white text-[9px] font-bold rounded-full">
                                 {tab.badge}
                             </span>
                         )}
@@ -594,7 +523,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
             </nav>
 
             {/* Main Content Areas */}
-            <main className="flex-1 overflow-y-auto px-6 py-4 space-y-6 premium-scrollbar animate-in">
+            <main className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-6 premium-scrollbar animate-in">
 
                 {activeTab === 'match' && (
                     <>
@@ -838,10 +767,12 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
 
                 {activeTab === 'agent' && (
                     <ApplicationAgent
+                        onJobPrepared={setJobData}
                         jobData={jobData}
                         selectedResumes={selectedResumes}
                         llmConfigs={llmConfigs}
                         selectedLLMConfigId={settings.selectedLLMConfigId}
+                        onSelectedLLMConfigChange={(id) => void handleSettingsChange({ selectedLLMConfigId: id })}
                         onConfigureProviders={() => setShowSettings(true)}
                     />
                 )}
@@ -867,7 +798,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
     );
 
     // Render based on display mode
-    if (isContentScript || settings.displayMode === 'overlay') {
+    if (isFloatingView) {
         return (
             <>
                 <FloatingButton
@@ -877,6 +808,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
                 {isOverlayExpanded && (
                     <FloatingOverlay
                         onClose={() => setIsOverlayExpanded(false)}
+                        onOpenSettings={() => setShowSettings(true)}
                     >
                         {mainContent}
                     </FloatingOverlay>

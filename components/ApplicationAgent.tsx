@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Bot, Clipboard, ExternalLink, Loader2, Sparkles } from 'lucide-react';
 import { createLLMChatCompletion } from '../utils/api';
 import type { LLMAPIConfig } from '../utils/api';
-import { buildApplicationAgentMessages, buildApplicationFormMessages, parseApplicationFormAnswers } from '../utils/llmAgent';
+import { getActiveBrowserTab, sendBrowserTabMessage, openBrowserJobLink, runBrowserApplication } from '../utils/browserTabs';
+import { smartRecruitersPostingApi } from '../utils/smartRecruiters';
+import { buildApplicationAgentMessages } from '../utils/llmAgent';
 import type { ApplicationAgentAction } from '../utils/llmAgent';
 import type { ApplicationFormField, JobData, Resume } from './sidepanel/types';
 
@@ -12,6 +14,7 @@ interface ApplicationAgentProps {
   llmConfigs: LLMAPIConfig[];
   selectedLLMConfigId?: string;
   onConfigureProviders: () => void;
+  onJobPrepared: (job: JobData) => void;
 }
 
 const ACTIONS: Array<{ id: ApplicationAgentAction; label: string }> = [
@@ -23,16 +26,13 @@ const ACTIONS: Array<{ id: ApplicationAgentAction; label: string }> = [
   { id: 'custom', label: 'Custom request' },
 ];
 
-const MAX_APPLICATION_STEPS = 8; // shortcut: cap one run at 8 steps, raise after observing real multi-step flows.
-const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
-const formSignature = (fields: ApplicationFormField[]) => fields.map((field) => `${field.type}:${field.label}`).join('|');
-
-export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs, selectedLLMConfigId, onConfigureProviders }: ApplicationAgentProps) {
+export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs, selectedLLMConfigId, onConfigureProviders, onJobPrepared }: ApplicationAgentProps) {
   const activeConfigs = useMemo(() => llmConfigs.filter((config) => config.isActive), [llmConfigs]);
   const [configId, setConfigId] = useState(selectedLLMConfigId || '');
   const [action, setAction] = useState<ApplicationAgentAction>('cover-letter');
   const [request, setRequest] = useState('');
   const [jobUrl, setJobUrl] = useState('');
+  const [preparingJob, setPreparingJob] = useState(false);
   const [output, setOutput] = useState('');
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
@@ -42,6 +42,28 @@ export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs,
   const [scanningForm, setScanningForm] = useState(false);
   const [automationRunning, setAutomationRunning] = useState(false);
   const [draftFieldId, setDraftFieldId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const showProgress = async (value: unknown) => {
+      const record = value as { tabId?: number; url?: string; timestamp?: number; running?: boolean; status?: string; error?: string } | undefined;
+      if (!record || typeof record.tabId !== 'number' || typeof record.timestamp !== 'number' || typeof record.url !== 'string' ||
+          typeof record.running !== 'boolean' || typeof record.status !== 'string' || typeof record.error !== 'string' || Date.now() - record.timestamp > 300000) return;
+      try {
+        const tab = await getActiveBrowserTab();
+        if (cancelled || tab.id !== record.tabId || (!record.running && tab.url !== record.url)) return;
+        setAutomationRunning(record.running);
+        setStatus(record.status);
+        setError(record.error);
+      } catch { /* An inactive view should not display another tab's run. */ }
+    };
+    chrome.storage.local.get('jdScan_applicationRun', data => void showProgress(data.jdScan_applicationRun));
+    const listener = (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
+      if (area === 'local' && changes.jdScan_applicationRun) void showProgress(changes.jdScan_applicationRun.newValue);
+    };
+    chrome.storage.onChanged.addListener(listener);
+    return () => { cancelled = true; chrome.storage.onChanged.removeListener(listener); };
+  }, []);
 
   useEffect(() => {
     if (activeConfigs.some((config) => config.id === configId)) return;
@@ -57,14 +79,17 @@ export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs,
 
   const openJobLink = async () => {
     setError('');
+    setStatus('Opening the job link and reading its description…');
+    setPreparingJob(true);
     try {
-      const url = new URL(jobUrl.trim());
-      if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('Use an http or https job link.');
-      if (typeof chrome === 'undefined' || !chrome.tabs?.create) throw new Error('Open this from the browser extension to use job links.');
-      await chrome.tabs.create({ url: url.toString() });
-      setStatus('Job page opened. JD Scan will capture its description when the page supports extraction.');
+      const result = await openBrowserJobLink(jobUrl.trim());
+      onJobPrepared(result.data);
+      setStatus(`Prepared ${result.data.title || 'the job description'}. Select your resume and provider, then run the application assistant.`);
     } catch (openError) {
+      setStatus('');
       setError(openError instanceof Error ? openError.message : 'Could not open this link.');
+    } finally {
+      setPreparingJob(false);
     }
   };
 
@@ -101,10 +126,8 @@ export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs,
     setStatus('');
     setScanningForm(true);
     try {
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      const tab = tabs[0];
-      if (!tab?.id) throw new Error('Could not find the active application tab.');
-      const response = await chrome.tabs.sendMessage(tab.id, { type: 'GET_APPLICATION_FIELDS' });
+      const tab = await getActiveBrowserTab();
+      const response = await sendBrowserTabMessage(tab.id, { type: 'GET_APPLICATION_FIELDS' });
       if (!response?.success) throw new Error(response?.error || 'Could not read application fields on this page.');
       const fields = (response.fields || []) as ApplicationFormField[];
       setFormFields(fields);
@@ -123,28 +146,9 @@ export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs,
     }
   };
 
-  const waitForApplicationStep = async (tabId: number, previousUrl: string, previousSignature: string) => {
-    const deadline = Date.now() + 12_000;
-    while (Date.now() < deadline) {
-      await wait(500);
-      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (activeTab?.id !== tabId) throw new Error('Switch back to the application tab to continue.');
-      try {
-        const response = await chrome.tabs.sendMessage(tabId, { type: 'GET_APPLICATION_FIELDS' });
-        if (!response?.success) continue;
-        const fields = (response.fields || []) as ApplicationFormField[];
-        if (response.applicationContext && (response.url !== previousUrl || formSignature(fields) !== previousSignature)) return response;
-      } catch {
-        // A new page may need a moment before its content script is ready.
-      }
-    }
-    return null;
-  };
-
   const runApplicationAssistant = async () => {
     const resume = selectedResumes[0];
-    if (!resume || !jobData.jd || !configId || automationRunning || working) return;
-
+    if (!resume || !jobData.jd || !configId || automationRunning || working || preparingJob) return;
     setAutomationRunning(true);
     setError('');
     setStatus('Starting the application assistant…');
@@ -152,124 +156,33 @@ export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs,
     setDraftFieldId(null);
     setFormFields([]);
     setFormTabId(null);
-    let totalFilled = 0;
-
     try {
-      const [initialTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!initialTab?.id) throw new Error('Open the application form in the active tab first.');
-      const tabId = initialTab.id;
-      let page = await chrome.tabs.sendMessage(tabId, { type: 'GET_APPLICATION_FIELDS' });
-      if (!page?.success) throw new Error(page?.error || 'Could not read the application form on this page.');
-      if (!page.applicationContext) {
-        setStatus('Looking for a clear Apply action on the job posting…');
-        const opened = await chrome.tabs.sendMessage(tabId, { type: 'OPEN_APPLICATION_FORM', expectedUrl: page.url });
-        if (!opened?.success) throw new Error(opened?.error || 'Could not open the application form.');
-        if (!opened.clicked && !opened.alreadyOpen) throw new Error(opened.error || 'Open the application form manually, then run the assistant again.');
-        if (!opened.alreadyOpen) {
-          page = await waitForApplicationStep(tabId, page.url, formSignature([]));
-          if (!page) throw new Error('The application form did not open. Open it manually, then run the assistant again.');
-        }
+      const tab = await getActiveBrowserTab();
+      let job = jobData;
+      if (smartRecruitersPostingApi(tab.url || 'https://invalid.example')) {
+        const captured = await sendBrowserTabMessage(tab.id, { type: 'GET_JD' });
+        if (!captured?.data?.jd) throw new Error(captured?.error || 'Read this job link before starting the assistant.');
+        job = captured.data;
+        onJobPrepared(job);
       }
-      if (!page.applicationContext) throw new Error('Open the application form before running the assistant.');
-
-      setFormTabId(tabId);
-      for (let step = 1; step <= MAX_APPLICATION_STEPS; step++) {
-        const fields = (page.fields || []) as ApplicationFormField[];
-        const pageUrl = typeof page.url === 'string' ? page.url : '';
-        const signature = formSignature(fields);
-        setFormFields(fields);
-
-        const emptyFields = fields.filter((field) => !field.value.trim());
-        let requiredNeedsUser = false;
-        if (emptyFields.length) {
-          setStatus(`Reading application step ${step} of ${MAX_APPLICATION_STEPS}…`);
-          const result = await createLLMChatCompletion(configId, buildApplicationFormMessages({
-            resume: resume.content,
-            jobDescription: jobData.jd,
-            jobTitle: jobData.title,
-            company: jobData.company,
-            fields: emptyFields,
-          }));
-          if (!result.success || !result.text) throw new Error(result.error || 'The provider could not draft answers for this step.');
-
-          const parsed = parseApplicationFormAnswers(result.text, emptyFields);
-          requiredNeedsUser = emptyFields.some((field) => field.required && parsed.needsUserIds.includes(field.id));
-          if (parsed.answers.length) {
-            const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            if (activeTab?.id !== tabId) throw new Error('Switch back to the application tab before the agent fills it.');
-            const filled = await chrome.tabs.sendMessage(tabId, {
-              type: 'FILL_APPLICATION_FIELDS',
-              expectedUrl: pageUrl,
-              fields: parsed.answers,
-            });
-            if (!filled?.success) throw new Error(filled?.error || 'The page changed before the agent could fill it.');
-            totalFilled += Number(filled.filled) || 0;
-            page = await chrome.tabs.sendMessage(tabId, { type: 'GET_APPLICATION_FIELDS' });
-            if (!page?.success) throw new Error('Could not verify the filled fields. The agent stopped before continuing.');
-            const refreshedFields = (page.fields || []) as ApplicationFormField[];
-            setFormFields(refreshedFields);
-            requiredNeedsUser ||= refreshedFields.some((field) => field.required && !field.value.trim());
-          }
-        }
-
-        if (Number(page.blockedRequiredCount) > 0 || requiredNeedsUser) {
-          setStatus(`Filled ${totalFilled} supported field${totalFilled === 1 ? '' : 's'}. A required answer needs your input, so the agent stopped before continuing.`);
-          return;
-        }
-        if (Number(page.truncatedFieldCount) > 0) {
-          setStatus(`Filled ${totalFilled} field${totalFilled === 1 ? '' : 's'}. This step has more fields than one run supports; review the remaining fields manually.`);
-          return;
-        }
-
-        if (step === MAX_APPLICATION_STEPS) {
-          setStatus(`Filled ${totalFilled} field${totalFilled === 1 ? '' : 's'}. Reached the ${MAX_APPLICATION_STEPS}-step limit; review the remaining form manually.`);
-          return;
-        }
-
-        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (activeTab?.id !== tabId) throw new Error('Switch back to the application tab to continue.');
-        const advance = await chrome.tabs.sendMessage(tabId, { type: 'ADVANCE_APPLICATION_STEP', expectedUrl: pageUrl });
-        if (!advance?.success) throw new Error(advance?.error || 'Could not inspect the next application step.');
-        if (Number(advance.blockedRequiredCount) > 0) {
-          setStatus(`Filled ${totalFilled} field${totalFilled === 1 ? '' : 's'}. A required field needs your input before continuing.`);
-          return;
-        }
-        if (Number(advance.truncatedFieldCount) > 0) {
-          setStatus(`Filled ${totalFilled} field${totalFilled === 1 ? '' : 's'}. This step has more fields than one run supports; review the remaining fields manually.`);
-          return;
-        }
-        if (advance.finalActionFound) {
-          setStatus(`Filled ${totalFilled} field${totalFilled === 1 ? '' : 's'}. The final review or submission step is ready for you; the agent left it untouched.`);
-          return;
-        }
-        if (!advance.clicked) {
-          setStatus(`Filled ${totalFilled} field${totalFilled === 1 ? '' : 's'}. No safe Next or Continue button was found; review this step manually.`);
-          return;
-        }
-
-        setStatus(`Completed step ${step}; opening the next form step…`);
-        const nextPage = await waitForApplicationStep(tabId, pageUrl, signature);
-        if (!nextPage) {
-          setStatus(`Filled ${totalFilled} field${totalFilled === 1 ? '' : 's'}, but the form did not advance. Check for a validation message and review the page.`);
-          return;
-        }
-        page = nextPage;
-      }
-    } catch (automationError) {
-      setError(automationError instanceof Error ? automationError.message : 'The application assistant stopped unexpectedly.');
+      const result = await runBrowserApplication({ tabId: tab.id, configId, resume: resume.content, job });
+      setStatus(result.status || '');
+      setError(result.error || '');
+    } catch (runError) {
+      setStatus('');
+      setError(runError instanceof Error ? runError.message : 'The application assistant stopped.');
     } finally {
       setAutomationRunning(false);
     }
   };
-
   const fillDraft = async () => {
     if (!draftFieldId || !formTabId || !output) return;
     setError('');
     setStatus('');
     try {
-      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (activeTab?.id !== formTabId) throw new Error('Switch back to the application tab before filling this answer.');
-      const response = await chrome.tabs.sendMessage(formTabId, {
+      const activeTab = await getActiveBrowserTab();
+      if (activeTab.id !== formTabId) throw new Error('Switch back to the application tab before filling this answer.');
+      const response = await sendBrowserTabMessage(formTabId, {
         type: 'FILL_APPLICATION_FIELD',
         fieldId: draftFieldId,
         value: output,
@@ -309,11 +222,12 @@ export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs,
         <label className="block text-[10px] font-bold uppercase tracking-wide text-muted-foreground" htmlFor="agent-job-url">Open a job link</label>
         <div className="flex gap-2">
           <input id="agent-job-url" type="url" value={jobUrl} onChange={(event) => setJobUrl(event.target.value)} placeholder="https://company.com/jobs/…" className="min-w-0 flex-1 p-2.5 text-xs bg-muted/50 border border-border rounded-lg outline-none focus:border-brand-400 text-foreground" />
-          <button onClick={openJobLink} disabled={!jobUrl.trim()} className="px-3 rounded-lg bg-muted hover:bg-brand-50 dark:hover:bg-brand-900/30 text-brand-700 dark:text-brand-300 disabled:opacity-40" title="Open job link in a new tab" aria-label="Open job link">
-            <ExternalLink className="w-4 h-4" />
+        <button onClick={openJobLink} disabled={!jobUrl.trim() || preparingJob || automationRunning} className="px-3 rounded-lg bg-muted hover:bg-brand-50 dark:hover:bg-brand-900/30 text-brand-700 dark:text-brand-300 disabled:opacity-40" title="Open and prepare job link" aria-label="Open and prepare job link">
+            {preparingJob ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
           </button>
         </div>
-        <p className="text-[10px] text-muted-foreground">After the page loads, JD Scan will use its extracted job description when available.</p>
+        <p className="text-[10px] text-muted-foreground">Opens the page and saves the job description for your application, including supported links that lead directly to a form.</p>
+        {jobData.jd && <details className="text-xs text-muted-foreground"><summary className="cursor-pointer font-semibold text-foreground">Prepared job: {jobData.title || 'Job description'}{jobData.company ? ` · ${jobData.company}` : ''}</summary><p className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap">{jobData.jd}</p></details>}
       </div>
 
       <div className="glass-card p-4 space-y-4">
@@ -357,7 +271,7 @@ export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs,
           <h3 className="text-xs font-bold text-foreground">Application form</h3>
           <p className="text-[10px] text-muted-foreground mt-1">Run a supervised pass from the job post through its application form.</p>
         </div>
-        <button onClick={() => void runApplicationAssistant()} disabled={!canAutomate || scanningForm || automationRunning || working} className="btn-primary w-full text-xs disabled:opacity-50">
+        <button onClick={() => void runApplicationAssistant()} disabled={!canAutomate || scanningForm || automationRunning || working || preparingJob} className="btn-primary w-full text-xs disabled:opacity-50">
           {automationRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           {automationRunning ? 'Running application assistant…' : 'Run application assistant'}
         </button>

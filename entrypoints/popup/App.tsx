@@ -1,14 +1,13 @@
 ﻿import { ScanLine, ExternalLink, Settings, ArrowUpRight, Loader2, Bot, PanelRight, PanelsTopLeft } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { loadSettings, UserSettings, DEFAULT_SETTINGS, applyColorMode } from '../../utils/settings';
+import { getActiveBrowserTab, sendBrowserTabMessage } from '../../utils/browserTabs';
 
 const chromeMock = {
   windows: { WINDOW_ID_CURRENT: -2 },
   sidePanel: { open: async (_opts: unknown) => {} },
   tabs: {
-    query: async (_opts: unknown) => [{ id: 1 }],
     create: async (_opts: unknown) => {},
-    sendMessage: async (_id: number, _msg: unknown): Promise<{ success?: boolean; message?: string }> => ({ success: true }),
   },
   runtime: { getURL: (path: string) => path },
 };
@@ -55,14 +54,13 @@ export default function App() {
     setFeedback(null);
     if (type === 'SCAN_PAGE') setIsScanning(true);
     try {
-      const [tab] = await _chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.id === undefined) throw new Error('No active tab');
-      const response = await _chrome.tabs.sendMessage(tab.id, { type });
+      const tab = await getActiveBrowserTab();
+      const response = await sendBrowserTabMessage(tab.id, { type });
       if (type === 'SCAN_PAGE') {
         setFeedback({ error: !response?.success, text: response?.message || 'No job description found on this page.' });
       }
-    } catch {
-      setFeedback({ error: true, text: 'Open a website tab and refresh it, then try again.' });
+    } catch (error) {
+      setFeedback({ error: true, text: error instanceof Error ? error.message : 'Open a website tab and refresh it, then try again.' });
     } finally {
       setIsScanning(false);
     }

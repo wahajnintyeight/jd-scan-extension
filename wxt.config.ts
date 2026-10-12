@@ -7,6 +7,9 @@ const apiHostPermission = `${new URL(apiBaseUrl).origin}/*`;
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   manifest: {
+    name: 'JD Scan',
+    description: 'Resume matching and supervised job application assistance.',
+    version: '1.2.3',
     permissions: ['sidePanel', 'storage', 'tabs', 'activeTab'],
     host_permissions: [
       apiHostPermission,

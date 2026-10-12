@@ -6,6 +6,8 @@ import SidepanelApp from "../sidepanel/App";
 import { highlightInDOM, injectHighlightStyles, removeHighlighting, createHighlightToggleButton } from "../../utils/keywordHighlighter";
 import { getAdapter } from "../../utils/siteAdapters";
 import type { ApplicationFormField } from "../../components/sidepanel/types";
+import { queryApplicationElements, applicationAncestor, getApplicationFormRoots, applicationFieldOwner, isRequiredApplicationField, isCustomApplicationControl, requiresUserAction } from '../../utils/applicationDom';
+import { smartRecruitersPostingApi, smartRecruitersJobData } from '../../utils/smartRecruiters';
 import "../../entrypoints/sidepanel/style.css";
 
 function isLikelyJobPage(): boolean {
@@ -148,6 +150,7 @@ export default defineContentScript({
     cssInjectionMode: "ui",
     async main(ctx) {
         console.log("JD Scan content script loaded on:", window.location.href);
+        let fieldActionContainer: HTMLElement | null = null;
 
         const ui = await createShadowRootUi(ctx, {
             name: "jd-scan-overlay",
@@ -155,6 +158,7 @@ export default defineContentScript({
             alignment: "top-left",
             zIndex: 2147483647,
             onMount(uiContainer, _shadow, shadowHost) {
+                fieldActionContainer = uiContainer;
                 shadowHost.id = 'jd-scan-overlay-root';
                 uiContainer.classList.add('jd-scan-theme');
                 const container = document.createElement('div');
@@ -177,12 +181,13 @@ export default defineContentScript({
 
         const applicationFieldCache = new Map<string, HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>();
         let applicationFieldPageUrl = window.location.href;
-        const sensitiveFieldPattern = /password|one-time[- ]?code|credit.?card|cc-number|cc-exp|cc-csc|social.?security|\bssn\b|tax.?id|bank.?account|routing.?number|date.?of.?birth|birth.?date|birthday|\bage\b|\bdob\b|passport|driver.?s.?license|national.?id|government.?id|identity.?number|work.?authori[sz]ation|employment.?authori[sz]ation|legally.?authori[sz]ed|citizenship|immigration|visa|race|ethnicity|gender|pronoun|sexual.?orientation|disability|veteran|medical|health|salary.?expectation|background.?check|criminal|consent|terms|agreement/i;
+        const restrictedFieldPattern = /password|one-time[- ]?code|credit.?card|cc-number|cc-exp|cc-csc|bank.?account|routing.?number/i;
 
         const getFieldLabel = (field: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, index: number) => {
+            const root = field.getRootNode() as Document | ShadowRoot;
             const labelledBy = field.getAttribute('aria-labelledby')
                 ?.split(/\s+/)
-                .map((labelId) => document.getElementById(labelId)?.textContent || '')
+                .map((labelId) => root.getElementById(labelId)?.textContent || '')
                 .join(' ');
             return [
                 Array.from(field.labels || []).map((item) => item.textContent || '').join(' '),
@@ -198,14 +203,27 @@ export default defineContentScript({
             return style.visibility !== 'hidden' && style.display !== 'none' && field.getClientRects().length > 0;
         };
 
-        const getApplicationFormRoots = () => Array.from(document.querySelectorAll('form, [role="form"]')).filter((root) => {
-            const formText = `${root.getAttribute('aria-label') || ''} ${root.getAttribute('action') || ''} ${root.textContent || ''}`.slice(0, 6000);
-            if (/\b(application|applicant|candidate|cover letter|resume|curriculum vitae|employment history|work experience|apply for|apply to)\b/i.test(formText)) return true;
-            if (!/\b(apply|application|candidate)\b/i.test(window.location.pathname)) return false;
-            return Array.from(root.querySelectorAll('button, input[type="submit"], [role="button"]')).some((element) =>
-                /\b(next|continue|proceed|submit|apply)\b/i.test(`${element.textContent || ''} ${element.getAttribute('aria-label') || ''} ${element instanceof HTMLInputElement ? element.value : ''}`),
-            );
-        });
+        let smartJob: { url: string; data: ReturnType<typeof smartRecruitersJobData> } | undefined;
+        const readPageJob = async () => {
+            if (smartRecruitersPostingApi(window.location.href)) {
+                const url = window.location.href;
+                if (smartJob?.url === url) return smartJob.data;
+                const response = await chrome.runtime.sendMessage({ type: 'JD_SCAN_READ_SMART_JOB', url });
+                if (!response?.success) throw new Error(response?.error || 'Could not read the original job posting.');
+                if (window.location.href !== url) throw new Error('The job page changed while its description was loading. Read the link again.');
+                const data = smartRecruitersJobData(response.posting);
+                smartJob = { url, data };
+                return data;
+            }
+            if (getApplicationFormRoots().length) throw new Error('This link is an application form. Open its original job posting to prepare the job description first.');
+            const { jd, title, company } = getAdapter(window.location.href).getJobData();
+            return { jd, title, company };
+        };
+
+        if (smartRecruitersPostingApi(window.location.href)) {
+            void readPageJob().then(data => chrome.storage.local.set({ jdScan_lastJob: { data, timestamp: Date.now(), url: window.location.href } }))
+                .catch(error => console.warn('JD Scan: Could not prepare SmartRecruiters job', error));
+        }
 
         const getApplicationFields = (): { fields: ApplicationFormField[]; blockedRequiredCount: number; truncatedFieldCount: number; applicationContext: boolean } => {
             applicationFieldCache.clear();
@@ -215,26 +233,27 @@ export default defineContentScript({
 
             const isSupported = (field: Element): field is HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement => {
                 if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement)) return false;
-                const owner = field.closest('form, [role="form"]');
+                const owner = applicationFieldOwner(field, applicationForms);
                 if (!owner || !applicationForms.includes(owner)) return false;
                 const type = field instanceof HTMLTextAreaElement ? 'textarea' : field instanceof HTMLSelectElement ? 'select' : field.type.toLowerCase();
                 const label = getFieldLabel(field, 0);
                 const fieldInfo = `${label} ${field.getAttribute('autocomplete') || ''} ${field.id}`;
                 return ['text', 'email', 'tel', 'url', 'search', 'textarea', 'select'].includes(type)
-                    && !sensitiveFieldPattern.test(fieldInfo)
+                    && !restrictedFieldPattern.test(fieldInfo)
+                    && !isCustomApplicationControl(field)
                     && !field.disabled
                     && !('readOnly' in field && field.readOnly)
-                    && !field.closest('#jd-scan-overlay-root')
+                    && !applicationAncestor(field, element => element.id === 'jd-scan-overlay-root')
                     && isApplicationFieldVisible(field);
             };
-            const controls = Array.from(new Set(applicationForms.flatMap((root) => Array.from(root.querySelectorAll('input, textarea, select')))));
+            const controls = Array.from(new Set(applicationForms.flatMap((root) => queryApplicationElements('input, textarea, select', root))));
             const blockedRequiredCount = controls.filter((field) => {
                 if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement)) return false;
-                if (!field.required || field.disabled || !isApplicationFieldVisible(field)) return false;
+                if (!isRequiredApplicationField(field) || field.disabled || !isApplicationFieldVisible(field)) return false;
                 const label = getFieldLabel(field as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, 0);
                 const type = field instanceof HTMLTextAreaElement ? 'textarea' : field instanceof HTMLSelectElement ? 'select' : (field as HTMLInputElement).type.toLowerCase();
-                const sensitive = sensitiveFieldPattern.test(`${label} ${field.getAttribute('autocomplete') || ''} ${field.id}`);
-                return sensitive || !['text', 'email', 'tel', 'url', 'search', 'textarea', 'select'].includes(type);
+                const restricted = restrictedFieldPattern.test(`${label} ${field.getAttribute('autocomplete') || ''} ${field.id}`);
+                return restricted || isCustomApplicationControl(field) || !['text', 'email', 'tel', 'url', 'search', 'textarea', 'select'].includes(type);
             }).length;
             const supportedFields = controls.filter(isSupported);
             const truncatedFieldCount = Math.max(0, supportedFields.length - 30);
@@ -252,7 +271,8 @@ export default defineContentScript({
                     type: type as ApplicationFormField['type'],
                     autocomplete: field.getAttribute('autocomplete')?.slice(0, 100) || undefined,
                     value: field.value.slice(0, 1000),
-                    required: field.required,
+                    required: isRequiredApplicationField(field),
+                    requiresUserAction: requiresUserAction(label),
                     maxLength: field instanceof HTMLSelectElement ? undefined : field.maxLength,
                     options: field instanceof HTMLSelectElement
                         ? Array.from(field.options).filter((option) => !option.disabled && option.value).slice(0, 30).map((option) => ({
@@ -267,12 +287,12 @@ export default defineContentScript({
 
         const fillCachedApplicationField = async (field: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, rawValue: string) => {
             if (!field.isConnected || field.disabled || ('readOnly' in field && field.readOnly) || !isApplicationFieldVisible(field)) return false;
-            const owner = field.closest('form, [role="form"]');
+            const owner = applicationFieldOwner(field);
             if (!owner || !getApplicationFormRoots().includes(owner)) return false;
             if (field.value.trim()) return false;
             const type = field instanceof HTMLTextAreaElement ? 'textarea' : field instanceof HTMLSelectElement ? 'select' : field.type.toLowerCase();
             const fieldInfo = `${getFieldLabel(field, 0)} ${field.getAttribute('autocomplete') || ''} ${field.id}`;
-            if (!['text', 'email', 'tel', 'url', 'search', 'textarea', 'select'].includes(type) || sensitiveFieldPattern.test(fieldInfo)) return false;
+            if (!['text', 'email', 'tel', 'url', 'search', 'textarea', 'select'].includes(type) || restrictedFieldPattern.test(fieldInfo) || requiresUserAction(getFieldLabel(field, 0)) || isCustomApplicationControl(field)) return false;
 
             let value = rawValue.trim();
             if (!value || value.length > 4000) return false;
@@ -295,30 +315,108 @@ export default defineContentScript({
                 ? HTMLTextAreaElement.prototype
                 : field instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
             Object.getOwnPropertyDescriptor(prototype, 'value')?.set?.call(field, value);
-            field.dispatchEvent(new Event('input', { bubbles: true }));
-            field.dispatchEvent(new Event('change', { bubbles: true }));
+            field.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+            field.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
             return field.value === value;
         };
+
+        const fieldActionHost = document.createElement('div');
+        const fieldActionRoot = fieldActionHost.attachShadow({ mode: 'open' });
+        fieldActionRoot.innerHTML = `<style>
+          :host { all: initial; }
+          button { position: fixed; display: none; z-index: 2147483646; pointer-events: auto; padding: 6px 9px; border: 1px solid oklch(var(--jd-primary)); border-radius: 7px; background: oklch(var(--jd-primary)); color: oklch(var(--jd-primary-foreground)); font: 600 12px/1.2 var(--jd-font-sans); white-space: nowrap; cursor: pointer; box-shadow: var(--jd-shadow-md); }
+          button:hover { filter: brightness(.94); }
+          button:disabled { opacity: .7; cursor: wait; }
+        </style><button type="button" aria-label="Draft an answer from my resume">Draft answer</button>`;
+        fieldActionHost.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483646;pointer-events:none';
+        fieldActionContainer?.appendChild(fieldActionHost);
+        const fieldActionButton = fieldActionRoot.querySelector('button')!;
+        let focusedApplicationField: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null = null;
+        let focusedApplicationFieldId = '';
+        const hideFieldAction = () => {
+            fieldActionButton.style.display = 'none';
+            focusedApplicationField = null;
+            focusedApplicationFieldId = '';
+        };
+        const positionFieldAction = () => {
+            if (!focusedApplicationField?.isConnected) return hideFieldAction();
+            const rect = focusedApplicationField.getBoundingClientRect();
+            const width = fieldActionButton.offsetWidth || 100;
+            const left = rect.right + width + 8 <= window.innerWidth ? rect.right + 6 : Math.max(8, rect.right - width - 6);
+            fieldActionButton.style.left = `${left}px`;
+            fieldActionButton.style.top = `${Math.max(8, Math.min(rect.top + 3, window.innerHeight - 34))}px`;
+        };
+        document.addEventListener('focusin', event => {
+            const field = event.composedPath().find(target =>
+                target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement,
+            );
+            if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement) ||
+                applicationAncestor(field, element => element.id === 'jd-scan-overlay-root') || field.value.trim()) {
+                hideFieldAction();
+                return;
+            }
+            const scan = getApplicationFields();
+            const entry = [...applicationFieldCache.entries()].find(([, cachedField]) => cachedField === field);
+            if (!scan.applicationContext || !entry || requiresUserAction(getFieldLabel(field, 0))) {
+                hideFieldAction();
+                return;
+            }
+            focusedApplicationField = field;
+            focusedApplicationFieldId = entry[0];
+            fieldActionButton.textContent = 'Draft answer';
+            fieldActionButton.disabled = false;
+            fieldActionButton.title = `Generate an answer for: ${getFieldLabel(field, 0)}`;
+            fieldActionButton.setAttribute('aria-label', `Draft answer for ${getFieldLabel(field, 0)}`);
+            fieldActionButton.style.display = 'block';
+            positionFieldAction();
+        }, true);
+        fieldActionButton.addEventListener('pointerdown', event => event.preventDefault());
+        fieldActionButton.addEventListener('click', async () => {
+            const field = focusedApplicationField;
+            const fieldId = focusedApplicationFieldId;
+            if (!field?.isConnected || !fieldId) return hideFieldAction();
+            fieldActionButton.disabled = true;
+            fieldActionButton.textContent = 'Drafting…';
+            fieldActionButton.title = 'Using your selected resume and prepared job posting';
+            try {
+                const response = await chrome.runtime.sendMessage({
+                    type: 'JD_SCAN_DRAFT_APPLICATION_FIELD',
+                    fieldId,
+                    fieldLabel: getFieldLabel(field, 0),
+                    fieldType: field instanceof HTMLTextAreaElement ? 'textarea' : field instanceof HTMLSelectElement ? 'select' : field.type.toLowerCase(),
+                    expectedUrl: window.location.href,
+                });
+                if (!response?.success) throw new Error(response?.error || 'Could not draft this answer.');
+                fieldActionButton.textContent = 'Filled';
+                fieldActionButton.title = 'Answer filled. Review it before continuing.';
+                window.setTimeout(hideFieldAction, 1200);
+            } catch (error) {
+                fieldActionButton.textContent = 'Try again';
+                fieldActionButton.disabled = false;
+                fieldActionButton.title = error instanceof Error ? error.message : 'Could not draft this answer.';
+            }
+        });
+        window.addEventListener('resize', positionFieldAction);
+        window.addEventListener('scroll', positionFieldAction, true);
+        document.addEventListener('focusout', () => window.setTimeout(() => {
+            if (fieldActionRoot.activeElement !== fieldActionButton && !focusedApplicationField?.matches(':focus')) hideFieldAction();
+        }, 0), true);
 
         // Message listener for commands
         chrome.runtime.onMessage.addListener((request: any, sender: any, sendResponse: any) => {
             if (request.type === "GET_JD") {
-                const adapter = getAdapter(window.location.href);
-                const data = adapter.getJobData();
-                sendResponse({ type: "JD_RESULT", data });
+                readPageJob().then(data => sendResponse({ type: "JD_RESULT", data }))
+                    .catch(error => sendResponse({ success: false, error: error instanceof Error ? error.message : 'Could not read this job.' }));
                 return true;
             }
 
             if (request.type === "SCAN_PAGE") {
-                const adapter = getAdapter(window.location.href);
-                const data = adapter.getJobData();
-                
-                if (data.jd && data.jd.length > 50) {
-                    chrome.runtime.sendMessage({ type: "JD_FOUND", data }).catch(() => { });
-                    sendResponse({ success: true, data, message: `Found job description (${data.jd.length} characters)` });
-                } else {
-                    sendResponse({ success: false, message: "No job description found or too short", data });
-                }
+                readPageJob().then(async data => {
+                    if (data.jd.length < 80) throw new Error('No readable job description found on this page.');
+                    await chrome.storage.local.set({ jdScan_lastJob: { data, timestamp: Date.now(), url: window.location.href } });
+                    chrome.runtime.sendMessage({ type: 'JD_FOUND', data }).catch(() => {});
+                    sendResponse({ success: true, data, message: `Prepared job description (${data.jd.length} characters)` });
+                }).catch(error => sendResponse({ success: false, message: error instanceof Error ? error.message : 'Could not read this job.' }));
                 return true;
             }
 
@@ -338,7 +436,7 @@ export default defineContentScript({
                 }
 
                 const applyLabel = /^(?:apply(?: now| for this job| to this job)?|easy apply|start (?:your )?application|begin (?:your )?application)$/i;
-                const applyAction = Array.from(document.querySelectorAll('a, button, [role="button"]')).find((element) => {
+                const applyAction = queryApplicationElements('a, button, [role="button"]').find((element) => {
                     const style = window.getComputedStyle(element);
                     if (element.closest('#jd-scan-overlay-root, form, [role="form"]')
                         || style.visibility === 'hidden' || style.display === 'none'
@@ -348,7 +446,7 @@ export default defineContentScript({
                     if (element instanceof HTMLButtonElement && element.type === 'submit') return false;
                     if (element instanceof HTMLAnchorElement) {
                         const href = new URL(element.href, window.location.href);
-                        if (!['http:', 'https:'].includes(href.protocol) || element.target === '_blank') return false;
+                        if (!['http:', 'https:'].includes(href.protocol)) return false;
                     }
                     return [element.textContent || '', element.getAttribute('aria-label') || '', element.getAttribute('title') || '']
                         .some((label) => applyLabel.test(label.replace(/\s+/g, ' ').trim()));
@@ -362,7 +460,10 @@ export default defineContentScript({
                 applyAction.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
                 sendResponse({ success: true, clicked: true });
                 window.setTimeout(() => {
-                    if (applyAction.isConnected && request.expectedUrl === window.location.href) (applyAction as HTMLElement).click();
+                    if (applyAction.isConnected && request.expectedUrl === window.location.href) {
+                        if (applyAction instanceof HTMLAnchorElement && applyAction.target === '_blank') window.location.assign(applyAction.href);
+                        else (applyAction as HTMLElement).click();
+                    }
                 }, 100);
                 return true;
             }
@@ -462,7 +563,7 @@ export default defineContentScript({
                     return true;
                 }
 
-                const actions = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], [role="button"], a'))
+                const actions = queryApplicationElements('button, input[type="button"], input[type="submit"], [role="button"], a')
                     .filter((element) => {
                         const style = window.getComputedStyle(element);
                         return !element.closest('#jd-scan-overlay-root')
@@ -485,10 +586,9 @@ export default defineContentScript({
                     if (finalPattern.test(cues)) return false;
                     if (!/^(?:(?:save|save draft)\s+(?:and|&)\s+)?(?:next|continue|proceed)(?:\s+(?:to|with|application|step|page|section|questions|details))*$/i.test(label)) return false;
                     if (element instanceof HTMLAnchorElement && new URL(element.href, window.location.href).origin !== window.location.origin) return false;
-                    const owner = (element instanceof HTMLButtonElement || element instanceof HTMLInputElement)
-                        ? element.form || element.closest('[role="form"]')
-                        : element.closest('form, [role="form"]');
-                    if (!owner || !Array.from(applicationFieldCache.values()).some((field) => owner.contains(field))) return false;
+                    const roots = getApplicationFormRoots();
+                    const owner = applicationFieldOwner(element, roots);
+                    if (!owner || !Array.from(applicationFieldCache.values()).some(field => applicationFieldOwner(field, roots) === owner)) return false;
                     return true;
                 });
 
@@ -513,13 +613,14 @@ export default defineContentScript({
         });
 
         // Proactively send JD if we think we are on a job page
-        if (isLikelyJobPage()) {
+        if (isLikelyJobPage() && !smartRecruitersPostingApi(window.location.href)) {
             let lastSentKey = "";
             let debounceTimer: number | null = null;
             let attempts = 0;
             const maxAttempts = 20;
 
             const pollJD = (attemptNum: number = 1) => {
+                if (getApplicationFormRoots().length) return false;
                 const adapter = getAdapter(window.location.href);
                 const data = adapter.getJobData();
                 const jdOk = data.jd.length >= 80;

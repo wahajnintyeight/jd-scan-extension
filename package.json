@@ -12,6 +12,8 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",
+    "test:browser-tabs": "node --test scripts/browser-tabs.test.mjs",
+    "test:job-flow": "node --test scripts/job-flow.test.mjs",
     "postinstall": "wxt prepare"
   },
   "dependencies": {

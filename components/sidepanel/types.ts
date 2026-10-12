@@ -37,6 +37,7 @@ export interface ApplicationFormField {
   autocomplete?: string;
   value: string;
   required?: boolean;
+  requiresUserAction?: boolean;
   maxLength?: number;
   options?: Array<{ label: string; value: string }>;
 }
