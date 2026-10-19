@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Key, Cpu, Zap, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { 
   LLM_PROVIDERS, 
@@ -8,7 +8,8 @@ import {
   updateLLMConfig, 
   deleteLLMConfig,
   fetchOpenRouterModels,
-  LLMAPIConfig 
+  LLMAPIConfig,
+  OpenRouterModel,
 } from '../utils/api';
 import SearchableDropdown, { DropdownOption } from './SearchableDropdown';
 
@@ -31,8 +32,9 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [openRouterModels, setOpenRouterModels] = useState<any[]>([]);
+  const [openRouterModels, setOpenRouterModels] = useState<OpenRouterModel[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
+  const openRouterRequestId = useRef(0);
 
   useEffect(() => {
     if (isOpen) {
@@ -48,33 +50,40 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
   };
 
   const handleProviderChange = (provider: string) => {
+    openRouterRequestId.current += 1;
     const models = getModelsForProvider(provider);
     setFormData({
       ...formData,
       provider,
       model: models[0] || '',
     });
-    setOpenRouterModels([]); // Clear OpenRouter models when provider changes
+    setOpenRouterModels([]);
+    setFetchingModels(false);
+    if (provider === 'openrouter' && formData.apiKey.startsWith('sk-or-v1-')) {
+      handleFetchOpenRouterModels(formData.apiKey);
+    }
   };
 
   const handleFetchOpenRouterModels = async (apiKey: string) => {
-    if (!apiKey || !apiKey.startsWith('sk-or-v1-')) {
+    const normalizedApiKey = apiKey.trim();
+    if (!normalizedApiKey.startsWith('sk-or-v1-')) {
+      setOpenRouterModels([]);
       return;
     }
 
+    const requestId = ++openRouterRequestId.current;
     setFetchingModels(true);
-    setFormError(''); // Clear any previous errors
-    const result = await fetchOpenRouterModels(apiKey);
+    setFormError('');
+    const result = await fetchOpenRouterModels(normalizedApiKey);
+    if (requestId !== openRouterRequestId.current) return;
     setFetchingModels(false);
 
     if (result.success && result.models) {
       setOpenRouterModels(result.models);
-      console.log(`Fetched ${result.models.length} OpenRouter models`);
     } else {
       const errorMessage = typeof result.error === 'string' 
         ? result.error 
         : 'Failed to fetch models';
-      console.error('Failed to fetch OpenRouter models:', result.error);
       setFormError(errorMessage);
     }
   };
@@ -324,12 +333,13 @@ export default function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps)
                       value={formData.apiKey}
                       onChange={(e) => {
                         const newApiKey = e.target.value;
+                        openRouterRequestId.current += 1;
+                        setOpenRouterModels([]);
+                        setFetchingModels(false);
                         setFormData({ ...formData, apiKey: newApiKey });
-                        
-                        // Auto-fetch OpenRouter models when API key is entered
-                        if (formData.provider === 'openrouter' && newApiKey.startsWith('sk-or-v1-')) {
-                          handleFetchOpenRouterModels(newApiKey);
-                        }
+                      }}
+                      onBlur={() => {
+                        if (formData.provider === 'openrouter') handleFetchOpenRouterModels(formData.apiKey);
                       }}
                       placeholder="sk-..."
                       className="w-full pl-12 pr-4 py-3 text-base border border-input rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"

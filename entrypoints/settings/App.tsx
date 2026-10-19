@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Monitor, Moon, Sun, Layout, Layers, Bell, Zap, Cpu, Key, CheckCircle2, AlertCircle, Loader2, Power, Trash2, Sparkles, Shield, ArrowLeft, Pencil } from 'lucide-react';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { loadSettings, saveSettings, UserSettings, DEFAULT_SETTINGS, applyColorMode } from '../../utils/settings';
@@ -16,7 +16,8 @@ import {
   deleteLLMConfig,
   testLLMConnection,
   fetchOpenRouterModels,
-  LLMAPIConfig 
+  LLMAPIConfig,
+  OpenRouterModel,
 } from '../../utils/api';
 import SearchableDropdown, { DropdownOption } from '../../components/SearchableDropdown';
 
@@ -39,8 +40,9 @@ export default function App() {
   const [submitting, setSubmitting] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [openRouterModels, setOpenRouterModels] = useState<any[]>([]);
+  const [openRouterModels, setOpenRouterModels] = useState<OpenRouterModel[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
+  const openRouterRequestId = useRef(0);
 
   useEffect(() => {
     loadSettings().then((loaded) => {
@@ -86,6 +88,7 @@ export default function App() {
   };
 
   const handleProviderChange = (provider: string) => {
+    openRouterRequestId.current += 1;
     const models = getModelsForProvider(provider);
     setFormData({
       ...formData,
@@ -94,14 +97,24 @@ export default function App() {
     });
     setTestResult(null);
     setOpenRouterModels([]);
+    setFetchingModels(false);
+    if (provider === 'openrouter' && formData.apiKey.startsWith('sk-or-v1-')) {
+      handleFetchOpenRouterModels(formData.apiKey);
+    }
   };
 
   const handleFetchOpenRouterModels = async (apiKey: string) => {
-    if (!apiKey || !apiKey.startsWith('sk-or-v1-')) return;
+    const normalizedApiKey = apiKey.trim();
+    if (!normalizedApiKey.startsWith('sk-or-v1-')) {
+      setOpenRouterModels([]);
+      return;
+    }
 
+    const requestId = ++openRouterRequestId.current;
     setFetchingModels(true);
     setFormError('');
-    const result = await fetchOpenRouterModels(apiKey);
+    const result = await fetchOpenRouterModels(normalizedApiKey);
+    if (requestId !== openRouterRequestId.current) return;
     setFetchingModels(false);
 
     if (result.success && result.models) {
@@ -642,11 +655,14 @@ export default function App() {
                                   value={formData.apiKey}
                                   onChange={(e) => {
                                     const newApiKey = e.target.value;
+                                    openRouterRequestId.current += 1;
+                                    setOpenRouterModels([]);
+                                    setFetchingModels(false);
                                     setFormData({ ...formData, apiKey: newApiKey });
                                     setTestResult(null);
-                                    if (formData.provider === 'openrouter' && newApiKey.startsWith('sk-or-v1-')) {
-                                      handleFetchOpenRouterModels(newApiKey);
-                                    }
+                                  }}
+                                  onBlur={() => {
+                                    if (formData.provider === 'openrouter') handleFetchOpenRouterModels(formData.apiKey);
                                   }}
                                     placeholder={editingConfigId ? 'Leave blank to keep the current key' : 'sk-...'}
                                   className="w-full pl-11 pr-4 py-2.5 text-sm bg-background border-2 border-border rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-colors font-mono text-foreground"

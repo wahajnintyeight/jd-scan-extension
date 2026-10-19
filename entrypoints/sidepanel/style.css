@@ -85,8 +85,6 @@
   .dashboard-tabs button { gap: 4px; padding-inline: 3px; font-size: 11px; white-space: nowrap; }
   .settings-modal-dialog { max-height: calc(100dvh - 32px); }
   .settings-modal-header { padding: 16px; }
-  .settings-modal-tabs { gap: 4px; padding-inline: 16px; }
-  .settings-modal-tabs button { padding-inline: 8px; white-space: nowrap; }
   [data-settings-modal-panel] { padding: 20px 16px !important; }
   [data-settings-modal-panel] .settings-choice-grid { grid-template-columns: minmax(0, 1fr); }
   [data-settings-modal-panel] .settings-appearance-grid button { padding: 12px 4px; }

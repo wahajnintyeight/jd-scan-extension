@@ -38,7 +38,10 @@ export default function SearchableDropdown({
   const [options, setOptions] = useState<DropdownOption[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onSearchRef = useRef(onSearch);
+  const searchIdRef = useRef(0);
+  onSearchRef.current = onSearch;
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -54,24 +57,25 @@ export default function SearchableDropdown({
     }
   }, [isOpen]);
 
-  // Debounced search on key events
+  // Debounce searches and ignore results from older queries.
   useEffect(() => {
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
 
-    if (!isOpen) return;
+    const searchId = ++searchIdRef.current;
+    if (!isOpen || loading) return;
 
     debounceTimerRef.current = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const results = await onSearch(searchQuery);
-        setOptions(results);
+        const results = await onSearchRef.current(searchQuery);
+        if (searchId === searchIdRef.current) setOptions(results);
       } catch (error) {
         console.error('Search failed:', error);
-        setOptions([]);
+        if (searchId === searchIdRef.current) setOptions([]);
       } finally {
-        setIsSearching(false);
+        if (searchId === searchIdRef.current) setIsSearching(false);
       }
     }, debounceMs);
 
@@ -79,8 +83,9 @@ export default function SearchableDropdown({
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
+      searchIdRef.current += 1;
     };
-  }, [searchQuery, isOpen, onSearch, debounceMs]);
+  }, [searchQuery, isOpen, value, loading, debounceMs]);
 
   const handleSelect = (optionId: string) => {
     onChange(optionId);
@@ -123,7 +128,7 @@ export default function SearchableDropdown({
           }}
           onFocus={() => setIsOpen(true)}
           placeholder={placeholder}
-          disabled={disabled || loading}
+          disabled={disabled}
           className="w-full pl-10 pr-10 py-2.5 text-sm border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none disabled:bg-muted disabled:cursor-not-allowed"
         />
         <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
@@ -137,7 +142,7 @@ export default function SearchableDropdown({
 
       {isOpen && !disabled && (
         <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-lg shadow-lg max-h-64 overflow-y-auto">
-          {isSearching ? (
+          {loading || isSearching ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-5 h-5 text-brand-600 animate-spin" />
             </div>

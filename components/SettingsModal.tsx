@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Monitor, Moon, Sun, Layout, Layers, Bell, Zap, Cpu, Key, CheckCircle2, AlertCircle, Loader2, Power, Trash2, Sparkles, Shield, Pencil } from 'lucide-react';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { UserSettings } from '../utils/settings';
@@ -16,7 +16,8 @@ import {
   deleteLLMConfig,
   testLLMConnection,
   fetchOpenRouterModels,
-  LLMAPIConfig 
+  LLMAPIConfig,
+  OpenRouterModel,
 } from '../utils/api';
 import SearchableDropdown, { DropdownOption } from './SearchableDropdown';
 
@@ -47,8 +48,10 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
   const [submitting, setSubmitting] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [openRouterModels, setOpenRouterModels] = useState<any[]>([]);
+  const [openRouterModels, setOpenRouterModels] = useState<OpenRouterModel[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
+  const openRouterRequestId = useRef(0);
+  const tabRefs = useRef<Record<'general' | 'llm', HTMLButtonElement | null>>({ general: null, llm: null });
 
   useEffect(() => {
     if (isOpen && activeTab === 'llm') {
@@ -74,6 +77,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
   };
 
   const handleProviderChange = (provider: string) => {
+    openRouterRequestId.current += 1;
     const models = getModelsForProvider(provider);
     setFormData({
       ...formData,
@@ -82,14 +86,24 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
     });
     setTestResult(null);
     setOpenRouterModels([]);
+    setFetchingModels(false);
+    if (provider === 'openrouter' && formData.apiKey.startsWith('sk-or-v1-')) {
+      handleFetchOpenRouterModels(formData.apiKey);
+    }
   };
 
   const handleFetchOpenRouterModels = async (apiKey: string) => {
-    if (!apiKey || !apiKey.startsWith('sk-or-v1-')) return;
+    const normalizedApiKey = apiKey.trim();
+    if (!normalizedApiKey.startsWith('sk-or-v1-')) {
+      setOpenRouterModels([]);
+      return;
+    }
 
+    const requestId = ++openRouterRequestId.current;
     setFetchingModels(true);
     setFormError('');
-    const result = await fetchOpenRouterModels(apiKey);
+    const result = await fetchOpenRouterModels(normalizedApiKey);
+    if (requestId !== openRouterRequestId.current) return;
     setFetchingModels(false);
 
     if (result.success && result.models) {
@@ -97,6 +111,21 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
     } else {
       const errorMessage = typeof result.error === 'string' ? result.error : 'Failed to fetch models';
       setFormError(errorMessage);
+    }
+  };
+
+  const handleSettingsTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, tab: 'general' | 'llm') => {
+    const nextTab = event.key === 'ArrowRight' || event.key === 'ArrowDown'
+      ? tab === 'general' ? 'llm' : 'general'
+      : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+        ? tab === 'llm' ? 'general' : 'llm'
+        : event.key === 'Home' ? 'general'
+          : event.key === 'End' ? 'llm' : null;
+
+    if (nextTab) {
+      event.preventDefault();
+      setActiveTab(nextTab);
+      tabRefs.current[nextTab]?.focus();
     }
   };
 
@@ -245,42 +274,42 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
         </div>
 
         {/* Tabs */}
-        <nav aria-label="Settings sections" className="settings-modal-tabs relative flex gap-1 px-6 pt-2 bg-muted/30">
+        <nav role="tablist" aria-label="Settings sections" className="settings-modal-tabs mx-6 mt-4 grid grid-cols-2 gap-1 rounded-xl border border-border/70 bg-muted/60 p-1">
           <button
+            ref={(element) => { tabRefs.current.general = element; }}
             onClick={() => setActiveTab('general')}
-            aria-pressed={activeTab === 'general'}
-            className={`relative flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-t-lg transition-colors ${
+            onKeyDown={(event) => handleSettingsTabKeyDown(event, 'general')}
+            id="settings-tab-general"
+            role="tab"
+            aria-selected={activeTab === 'general'}
+            aria-controls="settings-panel-general"
+            tabIndex={activeTab === 'general' ? 0 : -1}
+            className={`flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
               activeTab === 'general'
-                ? 'bg-background text-brand-600 shadow-sm'
-                : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
+                ? 'bg-background text-brand-700 shadow-sm ring-1 ring-border/70 dark:text-brand-300'
+                : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'
             }`}
           >
             <Layout className="w-4 h-4" />
             General
-            {activeTab === 'general' && (
-              <motion.div
-                layoutId="activeTab"
-                className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-600"
-              />
-            )}
           </button>
           <button
+            ref={(element) => { tabRefs.current.llm = element; }}
             onClick={() => setActiveTab('llm')}
-            aria-pressed={activeTab === 'llm'}
-            className={`relative flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-t-lg transition-colors ${
+            onKeyDown={(event) => handleSettingsTabKeyDown(event, 'llm')}
+            id="settings-tab-llm"
+            role="tab"
+            aria-selected={activeTab === 'llm'}
+            aria-controls="settings-panel-llm"
+            tabIndex={activeTab === 'llm' ? 0 : -1}
+            className={`flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
               activeTab === 'llm'
-                ? 'bg-background text-brand-600 shadow-sm'
-                : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
+                ? 'bg-background text-brand-700 shadow-sm ring-1 ring-border/70 dark:text-brand-300'
+                : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'
             }`}
           >
             <Cpu className="w-4 h-4" />
             LLM API
-            {activeTab === 'llm' && (
-              <motion.div
-                layoutId="activeTab"
-                className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-600"
-              />
-            )}
           </button>
         </nav>
 
@@ -290,6 +319,10 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
             {activeTab === 'general' ? (
               <motion.div
                 key="general"
+                id="settings-panel-general"
+                role="tabpanel"
+                aria-labelledby="settings-tab-general"
+                tabIndex={0}
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 20 }}
@@ -512,6 +545,10 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
             ) : (
               <motion.div
                 key="llm"
+                id="settings-panel-llm"
+                role="tabpanel"
+                aria-labelledby="settings-tab-llm"
+                tabIndex={0}
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
@@ -634,11 +671,14 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                                 value={formData.apiKey}
                                 onChange={(e) => {
                                   const newApiKey = e.target.value;
+                                  openRouterRequestId.current += 1;
+                                  setOpenRouterModels([]);
+                                  setFetchingModels(false);
                                   setFormData({ ...formData, apiKey: newApiKey });
                                   setTestResult(null);
-                                  if (formData.provider === 'openrouter' && newApiKey.startsWith('sk-or-v1-')) {
-                                    handleFetchOpenRouterModels(newApiKey);
-                                  }
+                                }}
+                                onBlur={() => {
+                                  if (formData.provider === 'openrouter') handleFetchOpenRouterModels(formData.apiKey);
                                 }}
                                 placeholder={editingConfigId ? 'Leave blank to keep the current key' : 'sk-...'}
                                 className="w-full pl-11 pr-4 py-2.5 text-sm bg-background border-2 border-border rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-colors font-mono text-foreground"
