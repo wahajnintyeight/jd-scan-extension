@@ -22,6 +22,20 @@ export default function FloatingOverlay({ onClose, onOpenSettings, children, ini
   const OVERLAY_W = Math.min(400, Math.max(280, window.innerWidth - 24));
   const OVERLAY_H = Math.min(isMinimized ? 40 : 580, Math.max(40, window.innerHeight - 24));
 
+  useEffect(() => {
+    const keepInViewport = () => {
+      const width = Math.min(400, Math.max(280, window.innerWidth - 24));
+      const height = Math.min(isMinimized ? 40 : 580, Math.max(40, window.innerHeight - 24));
+      setPos(current => ({
+        x: Math.max(0, Math.min(window.innerWidth - width, current.x)),
+        y: Math.max(12, Math.min(window.innerHeight - height - 12, current.y)),
+      }));
+    };
+    keepInViewport();
+    window.addEventListener('resize', keepInViewport);
+    return () => window.removeEventListener('resize', keepInViewport);
+  }, [isMinimized]);
+
   const onHeaderMouseDown = useCallback((e: React.MouseEvent) => {
     // Don't start drag on the buttons
     if ((e.target as HTMLElement).closest('button')) return;
@@ -47,7 +61,7 @@ export default function FloatingOverlay({ onClose, onOpenSettings, children, ini
 
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
-  }, [pos, OVERLAY_W]);
+  }, [pos, OVERLAY_W, OVERLAY_H]);
 
   return (
     <div

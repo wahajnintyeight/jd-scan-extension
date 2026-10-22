@@ -20,6 +20,7 @@ import {
   OpenRouterModel,
 } from '../utils/api';
 import SearchableDropdown, { DropdownOption } from './SearchableDropdown';
+import ConnectionTestResult from './ConnectionTestResult';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -161,7 +162,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
     setFormError('');
     setTestResult(null);
 
-    if (!formData.provider || !formData.model || !formData.apiKey) {
+    if (!formData.provider || !formData.model.trim() || !formData.apiKey.trim()) {
       setFormError('Fill in provider, model, and API key to test');
       return;
     }
@@ -170,8 +171,6 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
     const result = await testLLMConnection(formData.provider, formData.model, formData.apiKey);
     setTesting(false);
     setTestResult(result);
-
-    if (!result.success) setFormError(result.message || 'Connection test failed');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -242,7 +241,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
 
   return (
     <MotionConfig reducedMotion="user">
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[2147483647] flex items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -255,6 +254,9 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
         className="settings-modal-dialog relative w-full max-w-4xl max-h-[90dvh] bg-background rounded-3xl shadow-2xl overflow-hidden flex flex-col"
       >
         {/* Header */}
@@ -267,6 +269,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
           </div>
           <button
             onClick={onClose}
+            aria-label="Close settings"
             className="p-2 hover:bg-muted rounded-lg transition-colors active:scale-95 group"
           >
             <X className="w-5 h-5 text-muted-foreground group-hover:text-foreground" />
@@ -637,7 +640,10 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                             <label className="block text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">Model</label>
                             <SearchableDropdown
                               value={formData.model}
-                              onChange={(m) => setFormData({ ...formData, model: m })}
+                              onChange={(m) => {
+                                setFormData({ ...formData, model: m });
+                                setTestResult(null);
+                              }}
                               onSearch={handleModelSearch}
                               allowCustomValue
                               loading={fetchingModels}
@@ -694,7 +700,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                             <button
                               type="button"
                               onClick={handleTestConnection}
-                              disabled={testing || !formData.provider || !formData.model || !formData.apiKey}
+                              disabled={testing || !formData.provider || !formData.model.trim() || !formData.apiKey.trim()}
                               className="flex-1 px-4 py-3 bg-background hover:bg-muted border-2 border-border hover:border-muted-foreground/30 text-foreground text-sm font-bold rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
@@ -710,23 +716,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                             </button>
                           </div>
 
-                          {testResult && (
-                            <motion.div
-                              initial={{ opacity: 0, y: -10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              className={`p-4 rounded-xl text-sm font-medium flex items-start gap-3 ${
-                                testResult.success 
-                                  ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-2 border-emerald-200 dark:border-emerald-800' 
-                                  : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-2 border-amber-200 dark:border-amber-800'
-                              }`}
-                            >
-                              {testResult.success ? <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" /> : <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />}
-                              <div className="flex-1">
-                                <p className="font-bold">{testResult.success ? 'Connection Successful!' : 'Connection Failed'}</p>
-                                <p className="text-xs mt-1 opacity-90">{testResult.message}</p>
-                              </div>
-                            </motion.div>
-                          )}
+                          {testResult && <ConnectionTestResult result={testResult} />}
 
                           {formError && (
                             <motion.div

@@ -272,34 +272,34 @@ export async function testLLMConnection(provider: string, model: string, apiKey:
       headers,
       body: JSON.stringify({
         provider,
-        model,
-        apiKey,
+        model: model.trim(),
+        apiKey: apiKey.trim(),
       }),
     });
-    
-    const data: ApiResponse<TestConnectionResult> = await response.json();
-    
-    if (isSuccessResponse(data.code) && data.result) {
-      return {
-        success: data.result.success || false,
-        message: data.result.message || 'Connection test completed',
-        error: data.result.error,
-        usage: data.result.usage,
-      };
-    }
-    
+
+    const data: ApiResponse<TestConnectionResult | string> | null = await response.json().catch(() => null);
+    const result = data?.result && typeof data.result === 'object' ? data.result : undefined;
+    const success = response.ok && !!data && isSuccessResponse(data.code) && result?.success === true;
+    const messages = success
+      ? [result?.message]
+      : [result?.error, result?.message, typeof data?.result === 'string' ? data.result : undefined, data?.message];
+    const detail = messages.find(message =>
+      typeof message === 'string' && message.trim() && !/^(error|unknown error)$/i.test(message.trim())
+    )?.trim();
+    const message = detail || (success
+      ? 'Connection successful!'
+      : `Connection test failed${response.ok ? '' : ` (HTTP ${response.status})`}. Check the API key and model, then try again.`);
+
     return {
-      success: false,
-      message: data.message || 'Connection test failed',
-      error: typeof data.result === 'string' ? data.result : 'Unknown error',
+      success,
+      message,
+      error: success ? undefined : message,
+      usage: result?.usage,
     };
   } catch (error) {
     console.error('Failed to test LLM connection:', error);
-    return {
-      success: false,
-      message: 'Network error',
-      error: error instanceof Error ? error.message : 'Unknown error',
-    };
+    const message = `Could not reach the connection-test API: ${error instanceof Error ? error.message : 'Network request failed.'}`;
+    return { success: false, message, error: message };
   }
 }
 

@@ -20,6 +20,7 @@ import {
   OpenRouterModel,
 } from '../../utils/api';
 import SearchableDropdown, { DropdownOption } from '../../components/SearchableDropdown';
+import ConnectionTestResult from '../../components/ConnectionTestResult';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'general' | 'llm'>('general');
@@ -157,7 +158,7 @@ export default function App() {
     setFormError('');
     setTestResult(null);
 
-    if (!formData.provider || !formData.model || !formData.apiKey) {
+    if (!formData.provider || !formData.model.trim() || !formData.apiKey.trim()) {
       setFormError('Fill in provider, model, and API key to test');
       return;
     }
@@ -166,8 +167,6 @@ export default function App() {
     const result = await testLLMConnection(formData.provider, formData.model, formData.apiKey);
     setTesting(false);
     setTestResult(result);
-
-    if (!result.success) setFormError(result.message || 'Connection test failed');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -621,7 +620,10 @@ export default function App() {
                               <label className="block text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">Model</label>
                               <SearchableDropdown
                                 value={formData.model}
-                                onChange={(m) => setFormData({ ...formData, model: m })}
+                                onChange={(m) => {
+                                  setFormData({ ...formData, model: m });
+                                  setTestResult(null);
+                                }}
                                 onSearch={handleModelSearch}
                                 allowCustomValue
                                 loading={fetchingModels}
@@ -678,7 +680,7 @@ export default function App() {
                               <button
                                 type="button"
                                 onClick={handleTestConnection}
-                                disabled={testing || !formData.provider || !formData.model || !formData.apiKey}
+                                disabled={testing || !formData.provider || !formData.model.trim() || !formData.apiKey.trim()}
                                 className="flex-1 px-4 py-3 bg-background hover:bg-muted border-2 border-border hover:border-muted-foreground/30 text-foreground text-sm font-bold rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
@@ -694,23 +696,7 @@ export default function App() {
                               </button>
                             </div>
 
-                            {testResult && (
-                              <motion.div
-                                initial={{ opacity: 0, y: -10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className={`p-4 rounded-xl text-sm font-medium flex items-start gap-3 ${
-                                  testResult.success 
-                                    ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-2 border-emerald-200 dark:border-emerald-800' 
-                                    : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-2 border-amber-200 dark:border-amber-800'
-                                }`}
-                              >
-                                {testResult.success ? <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" /> : <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />}
-                                <div className="flex-1">
-                                  <p className="font-bold">{testResult.success ? 'Connection Successful!' : 'Connection Failed'}</p>
-                                  <p className="text-xs mt-1 opacity-90">{testResult.message}</p>
-                                </div>
-                              </motion.div>
-                            )}
+                            {testResult && <ConnectionTestResult result={testResult} />}
 
                             {formError && (
                               <motion.div
