@@ -215,8 +215,13 @@ export default defineContentScript({
                 smartJob = { url, data };
                 return data;
             }
-            if (getApplicationFormRoots().length) throw new Error('This link is an application form. Open its original job posting to prepare the job description first.');
             const { jd, title, company } = getAdapter(window.location.href).getJobData();
+            if (jd.trim().length < 80) {
+                const message = getApplicationFormRoots().length
+                    ? 'This page has an application form, but JD Scan could not isolate enough job details from it.'
+                    : 'No readable job description found on this page.';
+                throw new Error(message);
+            }
             return { jd, title, company };
         };
 
@@ -620,7 +625,6 @@ export default defineContentScript({
             const maxAttempts = 20;
 
             const pollJD = (attemptNum: number = 1) => {
-                if (getApplicationFormRoots().length) return false;
                 const adapter = getAdapter(window.location.href);
                 const data = adapter.getJobData();
                 const jdOk = data.jd.length >= 80;

@@ -1,6 +1,7 @@
 import { BaseAdapter } from './base';
 import { SiteAdapter, JobData } from './types';
 import { highlightInDOM } from '../keywordHighlighter';
+import { getApplicationFormRoots } from '../applicationDom';
 
 export class GenericAdapter extends BaseAdapter implements SiteAdapter {
     isMatch(url: string): boolean {
@@ -12,12 +13,24 @@ export class GenericAdapter extends BaseAdapter implements SiteAdapter {
         let jd = "";
         let jobElement: Element | null = null;
         let debug: any = { method: 'generic-heuristic', tried: [] };
+        const applicationForms = getApplicationFormRoots();
+        const getPostingText = (section: Element) => {
+            if (applicationForms.some(form => form === section || form.contains(section))) return '';
+            if (!applicationForms.some(form => section.contains(form))) return this.getElementText(section);
+
+            // Some ATS pages put the application form below the job description
+            // in one large content container. Strip that subtree before scoring
+            // the page so form labels and controls never become part of the JD.
+            const copy = section.cloneNode(true) as Element;
+            copy.querySelectorAll('form, [role="form"]').forEach(form => form.remove());
+            return this.getElementText(copy);
+        };
 
         // Fallback: Look for job description by searching for common job description patterns
         const allSections = document.querySelectorAll('section, article, div[role="main"], .jobs-box, main, [data-ui], [data-testid], div, p');
         
         for (const section of Array.from(allSections)) {
-            const text = this.getElementText(section);
+            const text = getPostingText(section);
             // Look for sections with job-related keywords and decent length
             if (text.length > 200 && text.length < 15000) {
                 const hasJobKeywords = /(?:requirements?|responsibilities?|qualifications?|experience|skills?|about (?:the )?job|description|role overview|what you.ll do|what we.re looking for|about (?:the )?role|job summary|position|candidate|apply|responsibilities|duties)/i.test(text);
@@ -42,7 +55,7 @@ export class GenericAdapter extends BaseAdapter implements SiteAdapter {
             for (const selector of lastResortSelectors) {
                 const element = document.querySelector(selector);
                 if (element) {
-                    const text = this.getElementText(element);
+                    const text = getPostingText(element);
                     if (text.length > 500 && text.length > jd.length) {
                         jd = text;
                         jobElement = element;
@@ -54,7 +67,11 @@ export class GenericAdapter extends BaseAdapter implements SiteAdapter {
 
         const title = this.getElementText(document.querySelector("h1")) || 
                       this.getElementText(document.querySelector("title"));
-        const company = ""; // Hard to guess generically
+        const isGreenhouse = window.location.hostname.endsWith('greenhouse.io');
+        const companySlug = isGreenhouse ? window.location.pathname.split('/').filter(Boolean)[0] : '';
+        const company = companySlug
+            ? companySlug.replace(/[-_]+/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())
+            : '';
 
         return this.createJobData(jd, title, company, jobElement, debug);
     }

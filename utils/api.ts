@@ -4,6 +4,15 @@
 
 import { getSessionHeaders } from './session';
 import { API_BASE_URL, apiFetch } from './apiTransport';
+import {
+  CHATGPT_PLAN_CONFIG_ID,
+  DEFAULT_CHATGPT_MODEL,
+  completeWithChatGPTPlan,
+  disconnectChatGPTPlan,
+  getChatGPTPlanPreferences,
+  getChatGPTPlanStatus,
+  saveChatGPTPlanPreferences,
+} from './chatgptPlan';
 
 export interface LLMProvider {
   value: string;
@@ -15,7 +24,7 @@ export const LLM_PROVIDERS: LLMProvider[] = [
   {
     value: 'openai',
     label: 'OpenAI',
-    models: ['gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+    models: ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-luna', 'gpt-4.1', 'gpt-4.1-mini'],
   },
   {
     value: 'anthropic',
@@ -162,6 +171,7 @@ function isSuccessResponse(code: number): boolean {
  * Fetch all LLM API configurations
  */
 export async function fetchLLMConfigs(): Promise<LLMAPIConfig[]> {
+  let configs: LLMAPIConfig[] = [];
   try {
     const headers = await getSessionHeaders();
     const response = await apiFetch(`${API_BASE_URL}/llm-api-configs`, {
@@ -171,7 +181,7 @@ export async function fetchLLMConfigs(): Promise<LLMAPIConfig[]> {
     
     if (isSuccessResponse(data.code)) {
       const seen = new Set<string>();
-      return (Array.isArray(data.result) ? data.result : []).filter((config) => {
+      configs = (Array.isArray(data.result) ? data.result : []).filter((config) => {
         if (!config || typeof config.id !== 'string' || !config.id.trim() || seen.has(config.id)) {
           console.error('Ignoring an LLM configuration with a missing or duplicate ID. Update the backend.');
           return false;
@@ -180,11 +190,29 @@ export async function fetchLLMConfigs(): Promise<LLMAPIConfig[]> {
         return true;
       });
     }
-    return [];
   } catch (error) {
     console.error('Failed to fetch LLM configs:', error);
-    return [];
   }
+
+  try {
+    const status = await getChatGPTPlanStatus();
+    if (status.connected) {
+      const preferences = await getChatGPTPlanPreferences();
+      configs.push({
+        id: CHATGPT_PLAN_CONFIG_ID,
+        name: preferences.name,
+        provider: 'openai',
+        model: preferences.model || DEFAULT_CHATGPT_MODEL,
+        isActive: preferences.isActive,
+        createdBy: 'local',
+        createdAt: '',
+        updatedAt: '',
+      });
+    }
+  } catch {
+    // The OpenAI plan connection is optional; API-key configurations still load without its helper.
+  }
+  return configs;
 }
 
 /**
@@ -216,6 +244,19 @@ export async function createLLMConfig(config: CreateLLMConfigRequest): Promise<{
  * Update an existing LLM API configuration
  */
 export async function updateLLMConfig(id: string, config: Partial<CreateLLMConfigRequest>): Promise<{ success: boolean; error?: string }> {
+  if (id === CHATGPT_PLAN_CONFIG_ID) {
+    try {
+      await saveChatGPTPlanPreferences({
+        ...(config.name !== undefined ? { name: config.name.trim() || 'ChatGPT Plan' } : {}),
+        ...(config.model !== undefined ? { model: config.model } : {}),
+        ...(config.isActive !== undefined ? { isActive: config.isActive } : {}),
+      });
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Could not update ChatGPT settings.' };
+    }
+  }
+
   try {
     const headers = await getSessionHeaders();
     const response = await apiFetch(`${API_BASE_URL}/llm-api-config?id=${id}`, {
@@ -241,6 +282,15 @@ export async function updateLLMConfig(id: string, config: Partial<CreateLLMConfi
  * Delete an LLM API configuration
  */
 export async function deleteLLMConfig(id: string): Promise<{ success: boolean; error?: string }> {
+  if (id === CHATGPT_PLAN_CONFIG_ID) {
+    try {
+      await disconnectChatGPTPlan();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Could not disconnect ChatGPT.' };
+    }
+  }
+
   try {
     const headers = await getSessionHeaders();
     const response = await apiFetch(`${API_BASE_URL}/llm-api-config?id=${id}`, {
@@ -321,6 +371,35 @@ export async function scanResumeATS(
   temperature?: number,
   maxTokens?: number
 ): Promise<{ success: boolean; data?: any; error?: string }> {
+  if (apiId === CHATGPT_PLAN_CONFIG_ID) {
+    const result = await createLLMChatCompletion(apiId, [
+      {
+        role: 'system',
+        content: 'Compare the resume with the job description. Return JSON only with this shape: {"score":0,"matchedKeywords":[],"missingKeywords":[],"suggestions":[]}. Score 0 to 100. Use only keywords supported by the supplied text and never invent candidate experience.',
+      },
+      { role: 'user', content: `Resume:\n<resume>\n${resumeContent.slice(0, 18000)}\n</resume>\n\nJob description:\n<job>\n${jobDescription.slice(0, 24000)}\n</job>` },
+    ], maxTokens);
+    if (!result.success || !result.text) return { success: false, error: result.error || 'ChatGPT could not scan this resume.' };
+    try {
+      const json = result.text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+      const parsed = JSON.parse(json);
+      const score = Number(parsed.score);
+      return {
+        success: true,
+        data: {
+          ats_score: {
+            score: Number.isFinite(score) ? Math.max(0, Math.min(100, score)) : 0,
+            matchedKeywords: Array.isArray(parsed.matchedKeywords) ? parsed.matchedKeywords.filter((value: unknown) => typeof value === 'string') : [],
+            missingKeywords: Array.isArray(parsed.missingKeywords) ? parsed.missingKeywords.filter((value: unknown) => typeof value === 'string') : [],
+            suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions.filter((value: unknown) => typeof value === 'string') : [],
+          },
+        },
+      };
+    } catch {
+      return { success: false, error: 'ChatGPT returned an invalid resume scan. Try again.' };
+    }
+  }
+
   try {
     const headers = await getSessionHeaders();
     const response = await apiFetch(`${API_BASE_URL}/gollm/ats/scan`, {
@@ -354,6 +433,18 @@ export async function createLLMChatCompletion(
   messages: LLMChatMessage[],
   maxTokens = 1800,
 ): Promise<{ success: boolean; text?: string; error?: string }> {
+  if (apiId === CHATGPT_PLAN_CONFIG_ID) {
+    try {
+      const preferences = await getChatGPTPlanPreferences();
+      const result = await completeWithChatGPTPlan(preferences.model || DEFAULT_CHATGPT_MODEL, messages);
+      return result.text.trim()
+        ? { success: true, text: result.text.trim() }
+        : { success: false, error: 'ChatGPT returned an empty response.' };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'The ChatGPT request failed.' };
+    }
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 90_000);
 

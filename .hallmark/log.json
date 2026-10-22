@@ -1,0 +1,209 @@
+﻿[
+    {
+        "value":  [
+                      {
+                          "date":  "2026-10-09",
+                          "scope":  "app",
+                          "genre":  "modern-minimal",
+                          "macrostructure":  "Workbench",
+                          "theme":  "Cobalt",
+                          "designSystem":  ".hallmark/design.md",
+                          "surfaces":  [
+                                           "sidepanel dashboard",
+                                           "popup",
+                                           "settings",
+                                           "floating assistant"
+                                       ],
+                          "filesChanged":  [
+                                               "tokens.css",
+                                               "tailwind.config.js",
+                                               "entrypoints/sidepanel/style.css",
+                                               "entrypoints/popup/style.css",
+                                               "entrypoints/settings/style.css",
+                                               "entrypoints/sidepanel/index.html",
+                                               "entrypoints/popup/index.html",
+                                               "entrypoints/settings/index.html",
+                                               "entrypoints/sidepanel/App.tsx",
+                                               "entrypoints/popup/App.tsx",
+                                               "entrypoints/settings/App.tsx",
+                                               "components/SettingsModal.tsx",
+                                               "components/LLMConfigModal.tsx",
+                                               "components/ApplicationAgent.tsx",
+                                               "components/sidepanel/AnalysisReport.tsx",
+                                               "components/sidepanel/ResumeLibraryTab.tsx",
+                                               "components/FloatingButton.tsx",
+                                               "components/FloatingOverlay.tsx",
+                                               ".hallmark/design.md"
+                                           ],
+                          "preEmitCritique":  {
+                                                  "philosophy":  4,
+                                                  "hierarchy":  5,
+                                                  "execution":  4,
+                                                  "specificity":  4,
+                                                  "restraint":  5,
+                                                  "variety":  4,
+                                                  "total":  26,
+                                                  "notes":  "One palette, compact bordered surfaces, reduced motion, keyboard focus, and preserved dark mode across every extension surface."
+                                              },
+                          "postEmitReview":  {
+                                                 "slopTest":  "pass: no active gradients or transition-all; visible focus and reduced-motion rules present",
+                                                 "responsiveWidths":  [
+                                                                          320,
+                                                                          375,
+                                                                          414,
+                                                                          768
+                                                                      ],
+                                                 "documentOverflow":  "none in popup, settings, and dashboard/floating assistant previews",
+                                                 "contrastRatios":  {
+                                                                        "light":  {
+                                                                                      "foreground/background":  "15.75:1",
+                                                                                      "mutedForeground/background":  "5.27:1",
+                                                                                      "primaryForeground/primary":  "4.63:1"
+                                                                                  },
+                                                                        "dark":  {
+                                                                                     "foreground/background":  "16.04:1",
+                                                                                     "mutedForeground/background":  "6.90:1",
+                                                                                     "primaryForeground/primary":  "7.44:1"
+                                                                                 }
+                                                                    },
+                                                 "runtimePreview":  "Static build preview does not provide extension storage or runtime; provider and persisted-data flows were not exercised."
+                                             }
+                      },
+                      {
+                          "date":  "2026-10-09",
+                          "scope":  "app palette correction",
+                          "theme":  "Slate and Teal",
+                          "designSystem":  ".hallmark/design.md",
+                          "preEmitCritique":  {
+                                                  "philosophy":  4,
+                                                  "hierarchy":  5,
+                                                  "execution":  5,
+                                                  "specificity":  4,
+                                                  "restraint":  5,
+                                                  "variety":  4
+                                              },
+                          "postEmitReview":  {
+                                                 "productionExtensionLoaded":  true,
+                                                 "hostThemeIsolation":  "pass with conflicting generic and prefixed host variables and global button styles",
+                                                 "responsiveWidths":  [
+                                                                          320,
+                                                                          375,
+                                                                          414,
+                                                                          768
+                                                                      ],
+                                                 "documentOverflow":  "none on popup, settings, and dashboard in both themes",
+                                                 "contrastChecks":  [
+                                                                        {
+                                                                            "surface":  "overlay",
+                                                                            "mode":  "light",
+                                                                            "bg":  "oklch(0.975 0.003 250)",
+                                                                            "fg":  "oklch(0.23 0.012 250)",
+                                                                            "contrast":  15.767650298527945,
+                                                                            "mutedContrast":  7.089813633304394,
+                                                                            "accentContrast":  6.519781263909175
+                                                                        },
+                                                                        {
+                                                                            "surface":  "popup",
+                                                                            "mode":  "light",
+                                                                            "bg":  "oklch(0.975 0.003 250)",
+                                                                            "fg":  "oklch(0.23 0.012 250)",
+                                                                            "contrast":  15.767650298527945,
+                                                                            "primaryContrast":  6.33182998176679
+                                                                        },
+                                                                        {
+                                                                            "surface":  "settings",
+                                                                            "mode":  "light",
+                                                                            "bg":  "oklch(0.975 0.003 250)",
+                                                                            "fg":  "oklch(0.23 0.012 250)",
+                                                                            "contrast":  15.767650298527945,
+                                                                            "primaryContrast":  6.33182998176679
+                                                                        },
+                                                                        {
+                                                                            "surface":  "sidepanel",
+                                                                            "mode":  "light",
+                                                                            "bg":  "oklch(0.975 0.003 250)",
+                                                                            "fg":  "oklch(0.23 0.012 250)",
+                                                                            "contrast":  15.767650298527945,
+                                                                            "primaryContrast":  6.33182998176679
+                                                                        },
+                                                                        {
+                                                                            "surface":  "overlay",
+                                                                            "mode":  "dark",
+                                                                            "bg":  "oklch(0.16 0.008 250)",
+                                                                            "fg":  "oklch(0.94 0.006 250)",
+                                                                            "contrast":  16.183083349171785,
+                                                                            "mutedContrast":  7.438506694434753,
+                                                                            "accentContrast":  8.706275114385868
+                                                                        },
+                                                                        {
+                                                                            "surface":  "popup",
+                                                                            "mode":  "dark",
+                                                                            "bg":  "oklch(0.16 0.008 250)",
+                                                                            "fg":  "oklch(0.94 0.006 250)",
+                                                                            "contrast":  16.183083349171785,
+                                                                            "primaryContrast":  9.268215817378792
+                                                                        },
+                                                                        {
+                                                                            "surface":  "settings",
+                                                                            "mode":  "dark",
+                                                                            "bg":  "oklch(0.16 0.008 250)",
+                                                                            "fg":  "oklch(0.94 0.006 250)",
+                                                                            "contrast":  16.183083349171785,
+                                                                            "primaryContrast":  9.268215817378792
+                                                                        },
+                                                                        {
+                                                                            "surface":  "sidepanel",
+                                                                            "mode":  "dark",
+                                                                            "bg":  "oklch(0.16 0.008 250)",
+                                                                            "fg":  "oklch(0.94 0.006 250)",
+                                                                            "contrast":  16.183083349171785,
+                                                                            "primaryContrast":  9.268215817378792
+                                                                        }
+                                                                    ],
+                                                 "limits":  "Palette and layout only; application automation and provider requests were not exercised."
+                                             }
+                      }
+                  ],
+        "Count":  2
+    },
+    {
+        "date":  "2026-10-09",
+        "scope":  "popup compact redesign",
+        "theme":  "Slate and Teal",
+        "designSystem":  ".hallmark/design.md",
+        "filesChanged":  [
+                             "entrypoints/popup/App.tsx",
+                             "entrypoints/popup/style.css",
+                             ".hallmark/design.md"
+                         ],
+        "preEmitCritique":  {
+                                "variety":  4,
+                                "execution":  5,
+                                "philosophy":  4,
+                                "restraint":  5,
+                                "specificity":  4,
+                                "hierarchy":  5
+                            },
+        "postEmitReview":  {
+                               "keyboardFocus":  "pass",
+                               "actions":  "Mocked assistant modes, dashboard, settings, scan success and failure passed",
+                               "limits":  "Live job applications were not exercised",
+                               "build":  "pass",
+                               "popupHeight":  249,
+                               "productionTypeScript":  "pass, legacy Jest tests excluded",
+                               "productionExtensionLoaded":  true,
+                               "documentOverflow":  "none",
+                               "responsiveWidths":  [
+                                                        320,
+                                                        375,
+                                                        414,
+                                                        768
+                                                    ],
+                               "themes":  [
+                                              "light",
+                                              "dark"
+                                          ],
+                               "minimumClickTarget":  44
+                           }
+    }
+]

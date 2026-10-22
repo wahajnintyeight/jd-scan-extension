@@ -10,7 +10,11 @@ export default defineConfig({
     name: 'JD Scan',
     description: 'Resume matching and supervised job application assistance.',
     version: '1.2.3',
-    permissions: ['sidePanel', 'storage', 'tabs', 'activeTab'],
+    permissions: ['sidePanel', 'storage', 'tabs', 'activeTab', 'nativeMessaging'],
+    action: {
+      default_title: 'JD Scan - Quick Actions',
+      default_popup: 'popup.html',
+    },
     host_permissions: [
       apiHostPermission,
       'http://*/*',

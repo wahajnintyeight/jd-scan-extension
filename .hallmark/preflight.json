@@ -1,0 +1,17 @@
+{
+  "date": "2026-10-09",
+  "scope": "extension UI: sidepanel dashboard, popup, settings page, floating overlay",
+  "findings": {
+    "existingDesignSystem": false,
+    "hallmarkHistory": false,
+    "palette": "duplicated warm orange/charcoal tokens with a separate blue Tailwind brand scale",
+    "fonts": "Inter and Outfit linked by sidepanel and popup; no font links in settings",
+    "motion": "motion package installed",
+    "surfaces": ["sidepanel dashboard", "browser popup", "settings page"]
+  },
+  "proposal": {
+    "genre": "modern-minimal",
+    "theme": "Cobalt",
+    "appMacrostructure": "Workbench"
+  }
+}

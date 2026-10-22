@@ -30,11 +30,11 @@ JD Scan is a Chromium extension for reading job postings, comparing them with lo
 
 ## AI providers
 
-Provider configurations are managed by the connected GoLLM API service. The extension currently offers:
+OpenAI API-key and other provider configurations are managed by the connected GoLLM API service. The extension currently offers:
 
 | Provider | Provider ID |
 | --- | --- |
-| OpenAI | `openai` |
+| OpenAI API key | `openai` |
 | Anthropic | `anthropic` |
 | Groq | `groq` |
 | Hugging Face Inference Providers | `huggingface` |
@@ -45,6 +45,8 @@ Provider configurations are managed by the connected GoLLM API service. The exte
 | OpenRouter | `openrouter` |
 | Ollama | `ollama` |
 
+JD Scan also supports **Continue with ChatGPT** for eligible ChatGPT plans through OpenAI's [open-source sign-in flow](https://developers.openai.com/siwc/token-sharing-open-source). It runs through a separate local Go native-messaging helper, uses the account-specific model catalog, and sends Responses API requests directly to OpenAI. OAuth tokens stay in Windows Credential Manager or the operating system keychain and are never sent to the JD Scan API. OpenAI controls account eligibility, available models, and plan usage limits. OpenAI API-key configurations remain available independently.
+
 The configured backend must support the chosen provider and model. You can enter a model ID when the preset list is out of date. Configuration names are optional; when editing a saved configuration, leaving the API key blank keeps the stored key.
 
 ## Install for development
@@ -52,8 +54,9 @@ The configured backend must support the chosen provider and model. You can enter
 ### Requirements
 
 - Node.js and npm
+- Go 1.23+ (only needed for the optional local ChatGPT plan helper)
 - Chrome or another Chromium browser that supports Manifest V3
-- A reachable JD Scan Go API service for AI configuration, model requests, and server-backed scans
+- A reachable JD Scan Go API service for API-key provider configurations and server-backed scans (not required for local ChatGPT plan requests)
 
 ### Build and load
 
@@ -90,6 +93,18 @@ If tab actions fail, check that the installed extension is **JD Scan 1.2.3**, lo
    You can also paste a URL in **Open a job link**. The extension opens the page, captures its description, saves the job context, and displays the prepared role. SmartRecruiters OneClick application links retrieve the matching description through the [public Posting API](https://developers.smartrecruiters.com/docs/endpoints), even when the form page does not display the job description.
 4. Review the match and missing keywords, then open the application workspace to draft content or work through the form.
 5. Review every answer on the employer's site and submit the application yourself.
+
+### Connect a ChatGPT plan
+
+The optional local helper keeps OAuth tokens in the operating system's protected keychain and sends plan requests directly to OpenAI. In Chrome, copy the JD Scan extension ID from `chrome://extensions`, then run this from the project folder in PowerShell:
+
+```powershell
+.\native\chatgpt-host\install-native-host.ps1 -ExtensionId <extension-id> -Browser chrome
+```
+
+Use `-Browser edge` or `-Browser opera` for Microsoft Edge or Opera GX. Run the script separately for each browser with that browser's extension ID. Restart the browser after installation, open JD Scan Settings → **LLM API**, and choose **Continue with ChatGPT**. The permission screen is handled in your system browser. After signing in, select a model from the catalog available to that ChatGPT account.
+
+To remove the native-messaging registration, pass `-Uninstall` with the same extension ID and browser choice. Disconnecting inside JD Scan also clears its local tokens and asks OpenAI to revoke the renewable session.
 
 The application assistant works with the active browser tab. It can click a clearly identified Apply, Next, or Continue action when the page and form pass its safety checks. It does not submit the final application or upload files for you.
 

@@ -21,6 +21,8 @@ import {
 } from '../../utils/api';
 import SearchableDropdown, { DropdownOption } from '../../components/SearchableDropdown';
 import ConnectionTestResult from '../../components/ConnectionTestResult';
+import ChatGPTPlanCard from '../../components/ChatGPTPlanCard';
+import { CHATGPT_PLAN_CONFIG_ID } from '../../utils/chatgptPlan';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'general' | 'llm'>('general');
@@ -728,6 +730,8 @@ export default function App() {
                     )}
                   </AnimatePresence>
 
+                  <ChatGPTPlanCard onChanged={() => loadConfigs()} />
+
                   {/* Configs List */}
                   <div className="space-y-3">
                     {loading ? (
@@ -799,14 +803,16 @@ export default function App() {
                             </div>
 
                               <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => handleEdit(config)}
-                                  className="p-2.5 text-muted-foreground hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-colors"
-                                  title="Edit configuration"
-                                  aria-label={`Edit ${config.name?.trim() || config.provider + ' configuration'}`}
-                                >
-                                  <Pencil className="w-4 h-4" />
-                                </button>
+                                {config.id !== CHATGPT_PLAN_CONFIG_ID && (
+                                  <button
+                                    onClick={() => handleEdit(config)}
+                                    className="p-2.5 text-muted-foreground hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-colors"
+                                    title="Edit configuration"
+                                    aria-label={`Edit ${config.name?.trim() || config.provider + ' configuration'}`}
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </button>
+                                )}
                                 <button
                                 onClick={() => handleToggleActive(config.id, config.isActive)}
                                 className={`p-2.5 rounded-lg transition-colors ${
@@ -818,13 +824,15 @@ export default function App() {
                               >
                                 <Power className="w-4.5 h-4.5" />
                               </button>
-                              <button
-                                onClick={() => handleDelete(config.id)}
-                                className="p-2.5 text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                                title="Delete"
-                              >
-                                <Trash2 className="w-4.5 h-4.5" />
-                              </button>
+                              {config.id !== CHATGPT_PLAN_CONFIG_ID && (
+                                <button
+                                  onClick={() => handleDelete(config.id)}
+                                  className="p-2.5 text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                  title="Delete"
+                                >
+                                  <Trash2 className="w-4.5 h-4.5" />
+                                </button>
+                              )}
                             </div>
                           </motion.div>
                         ))}
