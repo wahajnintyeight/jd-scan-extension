@@ -46,7 +46,8 @@ export default function SearchableDropdown({
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      // Shadow DOM retargets event.target to the overlay host.
+      if (containerRef.current && !event.composedPath().includes(containerRef.current)) {
         setIsOpen(false);
       }
     };
