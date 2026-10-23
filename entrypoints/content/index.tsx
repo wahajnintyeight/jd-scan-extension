@@ -2,7 +2,7 @@ import { findApplicationNavigation } from '../../utils/applicationNavigation';
 import { keepOverlayMounted } from '../../utils/overlayMount';
 import { isLikelyJobUrl } from '../../utils/jobPage';
 import { jobForPage } from '../../utils/jobContext';
-import { getFieldLabel, restrictedFieldPattern, fillApplicationField } from '../../utils/applicationField';
+import { getFieldLabel, getFieldDescription, restrictedFieldPattern, fillApplicationField } from '../../utils/applicationField';
 import { defineContentScript } from "wxt/utils/define-content-script";
 import { createShadowRootUi } from "wxt/utils/content-script-ui/shadow-root";
 import ReactDOM from "react-dom/client";
@@ -218,7 +218,8 @@ export default defineContentScript({
                 if (!owner || !applicationForms.includes(owner)) return false;
                 const type = field instanceof HTMLTextAreaElement ? 'textarea' : field instanceof HTMLSelectElement ? 'select' : field.type.toLowerCase();
                 const label = getFieldLabel(field, 0);
-                const fieldInfo = `${label} ${field.getAttribute('autocomplete') || ''} ${field.id}`;
+                const description = getFieldDescription(field) || '';
+                const fieldInfo = `${label} ${description} ${field.getAttribute('autocomplete') || ''} ${field.id}`;
                 return ['text', 'email', 'tel', 'url', 'search', 'textarea', 'select'].includes(type)
                     && !restrictedFieldPattern.test(fieldInfo)
                     && !isCustomApplicationControl(field)
@@ -232,9 +233,11 @@ export default defineContentScript({
                 if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement)) return false;
                 if (!isRequiredApplicationField(field) || field.disabled || !isApplicationFieldVisible(field)) return false;
                 const label = getFieldLabel(field as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, 0);
+                const description = getFieldDescription(field as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement) || '';
                 const type = field instanceof HTMLTextAreaElement ? 'textarea' : field instanceof HTMLSelectElement ? 'select' : (field as HTMLInputElement).type.toLowerCase();
-                const restricted = restrictedFieldPattern.test(`${label} ${field.getAttribute('autocomplete') || ''} ${field.id}`);
-                return restricted || isCustomApplicationControl(field) || !['text', 'email', 'tel', 'url', 'search', 'textarea', 'select'].includes(type);
+                const context = `${label} ${description}`;
+                const restricted = restrictedFieldPattern.test(`${context} ${field.getAttribute('autocomplete') || ''} ${field.id}`);
+                return restricted || requiresUserAction(context) || isCustomApplicationControl(field) || !['text', 'email', 'tel', 'url', 'search', 'textarea', 'select'].includes(type);
             }).length;
             const supportedFields = controls.filter(isSupported);
             const truncatedFieldCount = Math.max(0, supportedFields.length - 30);
@@ -244,16 +247,18 @@ export default defineContentScript({
                 const id = `field-${index}`;
                 applicationFieldCache.set(id, field);
                 const label = getFieldLabel(field, index);
+                const description = getFieldDescription(field);
                 const type = field instanceof HTMLTextAreaElement ? 'textarea' : field instanceof HTMLSelectElement ? 'select' : field.type.toLowerCase();
 
                 return {
                     id,
                     label,
+                    description,
                     type: type as ApplicationFormField['type'],
                     autocomplete: field.getAttribute('autocomplete')?.slice(0, 100) || undefined,
                     value: field.value.slice(0, 1000),
                     required: isRequiredApplicationField(field),
-                    requiresUserAction: requiresUserAction(label),
+                    requiresUserAction: requiresUserAction(`${label} ${description || ''}`),
                     maxLength: field instanceof HTMLSelectElement ? undefined : field.maxLength,
                     options: field instanceof HTMLSelectElement
                         ? Array.from(field.options).filter((option) => !option.disabled && option.value).slice(0, 30).map((option) => ({
@@ -303,7 +308,7 @@ export default defineContentScript({
             }
             const scan = getApplicationFields();
             const entry = [...applicationFieldCache.entries()].find(([, cachedField]) => cachedField === field);
-            if (!scan.applicationContext || !entry || requiresUserAction(getFieldLabel(field, 0))) {
+            if (!scan.applicationContext || !entry || requiresUserAction(`${getFieldLabel(field, 0)} ${getFieldDescription(field) || ''}`)) {
                 hideFieldAction();
                 return;
             }

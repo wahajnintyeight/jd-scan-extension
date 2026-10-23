@@ -34,6 +34,7 @@ export interface ScanResult {
 export interface ApplicationFormField {
   id: string;
   label: string;
+  description?: string;
   type: 'text' | 'email' | 'tel' | 'url' | 'search' | 'textarea' | 'select';
   autocomplete?: string;
   value: string;

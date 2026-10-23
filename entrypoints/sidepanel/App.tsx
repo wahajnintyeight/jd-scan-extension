@@ -34,6 +34,7 @@ import FloatingOverlay from "../../components/FloatingOverlay";
 import FloatingButton from "../../components/FloatingButton";
 import HighlightedJobDescription from "../../components/HighlightedJobDescription";
 import { readResumeFile } from "../../utils/resumeFile";
+import { appendStoredResumes } from "../../utils/resumeLibrary";
 import { highlightInDOM, injectHighlightStyles } from "../../utils/keywordHighlighter";
 
 export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement } = {}) {
@@ -54,6 +55,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
     const [showSettings, setShowSettings] = useState(false);
     const [isOverlayExpanded, setIsOverlayExpanded] = useState(false);
     const [llmConfigs, setLlmConfigs] = useState<LLMAPIConfig[]>([]);
+    const [llmConfigsLoading, setLlmConfigsLoading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const dropZoneRef = useRef<HTMLDivElement>(null);
     const dragCounter = useRef(0);
@@ -62,33 +64,37 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
     // Load settings everywhere, but only contact the API after the page overlay opens.
     useEffect(() => {
         let cancelled = false;
+        const shouldLoadConfigs = !isContentScript || isOverlayExpanded;
+        setLlmConfigsLoading(shouldLoadConfigs);
         (async () => {
-            const loaded = await loadSettings();
-            if (cancelled) return;
-            setSettings(loaded);
-            applyColorMode(loaded.colorMode, colorModeTarget);
+            try {
+                const loaded = await loadSettings();
+                if (cancelled) return;
+                setSettings(loaded);
+                applyColorMode(loaded.colorMode, colorModeTarget);
 
-            if (isContentScript && !isOverlayExpanded) return;
+                if (!shouldLoadConfigs) return;
 
-            const configs = await fetchLLMConfigs();
-            if (cancelled) return;
-            setLlmConfigs(configs);
+                const configs = await fetchLLMConfigs();
+                if (cancelled) return;
+                setLlmConfigs(configs);
 
-            console.log("JD Scan: Loaded settings:", loaded);
-            console.log("JD Scan: Fetched LLM configs:", configs);
+                console.log("JD Scan: Loaded settings:", loaded);
+                console.log("JD Scan: Fetched LLM configs:", configs);
 
-            if (!loaded.selectedLLMConfigId && configs.length > 0) {
-                const activeConfigs = configs.filter((c) => c.isActive);
-                const autoConfig = activeConfigs.length === 1 ? activeConfigs[0] : undefined;
-                
-                console.log("JD Scan: Auto-selecting config:", autoConfig);
-                
-                if (autoConfig) {
-                    const newSettings = { ...loaded, selectedLLMConfigId: autoConfig.id };
-                    setSettings(newSettings);
-                    await saveSettings({ selectedLLMConfigId: autoConfig.id });
-                    console.log("JD Scan: Saved auto-selected config on mount:", autoConfig.id);
+                if (!loaded.selectedLLMConfigId && configs.length > 0) {
+                    const activeConfigs = configs.filter((c) => c.isActive);
+                    const autoConfig = activeConfigs.length === 1 ? activeConfigs[0] : undefined;
+                    console.log("JD Scan: Auto-selecting config:", autoConfig);
+                    if (autoConfig) {
+                        const newSettings = { ...loaded, selectedLLMConfigId: autoConfig.id };
+                        setSettings(newSettings);
+                        await saveSettings({ selectedLLMConfigId: autoConfig.id });
+                        console.log("JD Scan: Saved auto-selected config on mount:", autoConfig.id);
+                    }
                 }
+            } finally {
+                if (!cancelled && shouldLoadConfigs) setLlmConfigsLoading(false);
             }
         })();
         return () => { cancelled = true; };
@@ -152,6 +158,9 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
         chrome.storage.local.get('jdScan_applicationRun', data => restoreRunningOverlay(data.jdScan_applicationRun));
         const storageListener = (changes: any, namespace: string) => {
             if (namespace === 'local' && changes.jdScan_applicationRun) restoreRunningOverlay(changes.jdScan_applicationRun.newValue);
+            if (namespace === 'local' && changes.resumes) {
+                setResumes(Array.isArray(changes.resumes.newValue) ? changes.resumes.newValue as Resume[] : []);
+            }
             if (namespace === 'local' && changes.userSettings) {
                 const updated = { ...DEFAULT_SETTINGS, ...changes.userSettings.newValue };
                 setSettings(updated);
@@ -229,6 +238,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
         setUploadingFiles((prev) => [...prev, ...uploadEntries]);
 
         const newResumes: Resume[] = [];
+        const processedEntryIds: string[] = [];
 
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
@@ -240,10 +250,6 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
                 );
                 const content = await readResumeFile(file);
 
-                setUploadingFiles((prev) =>
-                    prev.map((u) => u.id === entryId ? { ...u, progress: 100, status: "done" } : u)
-                );
-
                 newResumes.push({
                     id: crypto.randomUUID(),
                     name: file.name,
@@ -253,6 +259,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
                     uploadedAt: new Date().toISOString(),
                     selected: true,
                 });
+                processedEntryIds.push(entryId);
             } catch (err) {
                 setUploadingFiles((prev) =>
                     prev.map((u) =>
@@ -264,17 +271,20 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
             }
         }
 
-        // Clear upload indicators after a short delay
-        setTimeout(() => {
-            setUploadingFiles((prev) => prev.filter((u) => u.status !== "done"));
-        }, 1500);
-
         if (newResumes.length > 0) {
-            setResumes((prev) => {
-                const updated = [...prev, ...newResumes];
-                chrome.storage?.local?.set({ resumes: updated });
-                return updated;
-            });
+            try {
+                setResumes(await appendStoredResumes(newResumes));
+                setUploadingFiles((prev) => prev.map((u) => processedEntryIds.includes(u.id)
+                    ? { ...u, progress: 100, status: "done" }
+                    : u));
+                setTimeout(() => {
+                    setUploadingFiles((prev) => prev.filter((u) => u.status !== "done"));
+                }, 1500);
+            } catch {
+                setUploadingFiles((prev) => prev.map((u) => processedEntryIds.includes(u.id)
+                    ? { ...u, status: "error", error: "Could not save this resume locally. Check extension storage and try again." }
+                    : u));
+            }
         }
 
         setShowUploadZone(false);
@@ -757,6 +767,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
                         jobData={jobData}
                         selectedResumes={selectedResumes}
                         llmConfigs={llmConfigs}
+                        llmConfigsLoading={llmConfigsLoading}
                         selectedLLMConfigId={settings.selectedLLMConfigId}
                         onSelectedLLMConfigChange={(id) => void handleSettingsChange({ selectedLLMConfigId: id })}
                         onConfigureProviders={() => setShowSettings(true)}

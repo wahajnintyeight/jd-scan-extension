@@ -7,14 +7,41 @@ export const getFieldLabel = (field: HTMLInputElement | HTMLTextAreaElement | HT
     const labelledBy = field.getAttribute('aria-labelledby')
         ?.split(/\s+/)
         .map((labelId) => root.getElementById(labelId)?.textContent || '')
-        .join(' ');
+        .join(' ').replace(/\s+/g, ' ').trim();
     return [
-        Array.from(field.labels || []).map((item) => item.textContent || '').join(' '),
+        labelledBy,
         field.getAttribute('aria-label') || '',
-        labelledBy || '',
+        Array.from(field.labels || []).map((item) => item.textContent || '').join(' '),
         field.getAttribute('placeholder') || '',
         field.getAttribute('name') || '',
-    ].join(' ').replace(/\s+/g, ' ').trim().slice(0, 300) || `Text field ${index + 1}`;
+    ].map((text) => text?.replace(/\s+/g, ' ').trim() || '').find(Boolean)?.slice(0, 300) || `Text field ${index + 1}`;
+};
+
+export const getFieldDescription = (field: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement) => {
+    const root = field.getRootNode() as Document | ShadowRoot;
+    const describedBy = field.getAttribute('aria-describedby')?.split(/\s+/)
+        .map((id) => root.getElementById(id)?.textContent || '').join(' ');
+    const explicit = [field.getAttribute('aria-description'), describedBy]
+        .filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+    if (explicit) return explicit.slice(0, 600);
+
+    const label = getFieldLabel(field, 0).toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    for (let container = field.parentElement, depth = 0; container && depth < 4; container = container.parentElement, depth++) {
+        const controls = Array.from(container.querySelectorAll('input, textarea, select'));
+        if (controls.length !== 1 || controls[0] !== field) continue;
+        const fieldChild = Array.from(container.children).find((child) => child === field || child.contains(field));
+        if (!fieldChild) continue;
+        const description = Array.from(container.children)
+            .filter((child) => child !== fieldChild && child.tagName !== 'LABEL' && !child.querySelector('input, textarea, select, button'))
+            .map((child) => (child.textContent || '').replace(/\s+/g, ' ').trim())
+            .filter((text) => {
+                const normalized = text.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+                return normalized && normalized !== label && !label.startsWith(normalized);
+            })
+            .join(' ')
+            .trim();
+        if (description) return description.slice(0, 600);
+    }
 };
 
 export const fillApplicationField = async (field: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, rawValue: string, expectedUrl: string) => {
@@ -23,8 +50,9 @@ export const fillApplicationField = async (field: HTMLInputElement | HTMLTextAre
     if (!applicationFieldOwner(field, roots)) return false;
     if (field.value.trim()) return false;
     const type = field instanceof HTMLTextAreaElement ? 'textarea' : field instanceof HTMLSelectElement ? 'select' : field.type.toLowerCase();
-    const fieldInfo = `${getFieldLabel(field, 0)} ${field.getAttribute('autocomplete') || ''} ${field.id}`;
-    if (!['text', 'email', 'tel', 'url', 'search', 'textarea', 'select'].includes(type) || restrictedFieldPattern.test(fieldInfo) || requiresUserAction(getFieldLabel(field, 0)) || isCustomApplicationControl(field)) return false;
+    const label = getFieldLabel(field, 0);
+    const fieldInfo = `${label} ${getFieldDescription(field) || ''} ${field.getAttribute('autocomplete') || ''} ${field.id}`;
+    if (!['text', 'email', 'tel', 'url', 'search', 'textarea', 'select'].includes(type) || restrictedFieldPattern.test(fieldInfo) || requiresUserAction(fieldInfo) || isCustomApplicationControl(field)) return false;
 
     let value = rawValue.trim();
     if (!value || value.length > 4000) return false;

@@ -1,9 +1,11 @@
 import ApplicationNameForm from './sidepanel/ApplicationNameForm';
-import { loadApplicationName, confirmedNameAnswer } from '../utils/applicationName';
+import { loadApplicationName } from '../utils/applicationName';
 import { useEffect, useMemo, useState } from 'react';
 import { Bot, Clipboard, ExternalLink, Loader2, Sparkles } from 'lucide-react';
 import { createLLMChatCompletion } from '../utils/api';
 import type { LLMAPIConfig } from '../utils/api';
+import { draftApplicationAnswers } from '../utils/applicationAnswers';
+import { requiresUserAction } from '../utils/applicationDom';
 import { getActiveBrowserTab, sendBrowserTabMessage, openBrowserJobLink, runBrowserApplication } from '../utils/browserTabs';
 import { smartRecruitersPostingApi } from '../utils/smartRecruiters';
 import { buildApplicationAgentMessages } from '../utils/llmAgent';
@@ -15,6 +17,7 @@ interface ApplicationAgentProps {
   jobData: JobData;
   selectedResumes: Resume[];
   llmConfigs: LLMAPIConfig[];
+  llmConfigsLoading: boolean;
   selectedLLMConfigId?: string;
   onSelectedLLMConfigChange: (id: string) => void;
   onConfigureProviders: () => void;
@@ -30,7 +33,7 @@ const ACTIONS: Array<{ id: ApplicationAgentAction; label: string }> = [
   { id: 'custom', label: 'Custom request' },
 ];
 
-export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs, selectedLLMConfigId, onSelectedLLMConfigChange, onConfigureProviders, onJobPrepared }: ApplicationAgentProps) {
+export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs, llmConfigsLoading, selectedLLMConfigId, onSelectedLLMConfigChange, onConfigureProviders, onJobPrepared }: ApplicationAgentProps) {
   const activeConfigs = useMemo(() => llmConfigs.filter((config) => config.isActive), [llmConfigs]);
   const [configId, setConfigId] = useState(selectedLLMConfigId || '');
   const [action, setAction] = useState<ApplicationAgentAction>('cover-letter');
@@ -113,9 +116,27 @@ export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs,
     setOutput('');
     setDraftFieldId(draft?.fieldId || null);
     try {
-      const field = formFields.find(field => field.id === draft?.fieldId);
-      const confirmed = field && confirmedNameAnswer(field, await loadApplicationName(resume.id));
-      if (confirmed) { setOutput(confirmed); return; }
+      const field = draft?.fieldId ? formFields.find(field => field.id === draft.fieldId) : undefined;
+      if (draft?.fieldId) {
+        if (!field) throw new Error('This form field is no longer available. Scan the form again.');
+        if (field.value.trim()) {
+          setStatus('This field already has a value and was not sent to AI.');
+          return;
+        }
+        const result = await draftApplicationAnswers(configId, {
+          resume: resume.content,
+          jobDescription: jobData.jd,
+          jobTitle: jobData.title,
+          company: jobData.company,
+          fields: [field],
+          applicationName: await loadApplicationName(resume.id),
+        });
+        const answer = result.answers.find(answer => answer.fieldId === field.id);
+        if (answer) setOutput(answer.value);
+        else if (result.needsUserIds.includes(field.id)) setStatus('This field needs your review; no AI draft was requested.');
+        else setError('The selected provider did not return an answer for this field.');
+        return;
+      }
       const result = await createLLMChatCompletion(configId, buildApplicationAgentMessages({
         action: requestedAction, resume: resume.content, jobDescription: jobData.jd,
         jobTitle: jobData.title, company: jobData.company, request: requestText,
@@ -138,7 +159,10 @@ export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs,
       }
       const response = await sendBrowserTabMessage(tab.id, { type: 'GET_APPLICATION_FIELDS' });
       if (!response?.success) throw new Error(response?.error || 'Could not read application fields on this page.');
-      const fields = (response.fields || []) as ApplicationFormField[];
+      const fields = ((response.fields || []) as ApplicationFormField[]).map(field => ({
+        ...field,
+        requiresUserAction: field.requiresUserAction || requiresUserAction(`${field.label} ${field.description || ''}`),
+      }));
       setFormFields(fields);
       setFormTabId(tab.id);
       const blocked = Number(response.blockedRequiredCount) || 0;
@@ -250,7 +274,11 @@ export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs,
       <div className="agent-section space-y-4">
         <div>
           <label className="block text-sm font-semibold text-muted-foreground mb-1.5" htmlFor="agent-provider">AI provider and model</label>
-          {activeConfigs.length > 0 ? (
+          {llmConfigsLoading ? (
+            <p role="status" aria-live="polite" className="flex items-center gap-2 p-3 text-xs text-muted-foreground">
+              <Loader2 aria-hidden="true" className="w-4 h-4 animate-spin" /> Loading saved providers…
+            </p>
+          ) : activeConfigs.length > 0 ? (
             <select id="agent-provider" value={configId} onChange={(event) => { setConfigId(event.target.value); onSelectedLLMConfigChange(event.target.value); }} className="w-full p-2.5 text-xs bg-muted/50 border border-border rounded-lg outline-none focus:border-brand-400 text-foreground">
               {activeConfigs.map((config) => <option key={config.id} value={config.id}>{config.name?.trim() || `${config.provider}/${config.model}`} · {config.provider} · {config.model}</option>)}
             </select>
@@ -301,11 +329,16 @@ export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs,
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {formFields.map((field) => (
               <div key={field.id} className="flex items-center gap-2 p-2.5 rounded-lg border border-border/70">
-                <span className="min-w-0 flex-1 text-xs text-foreground line-clamp-2">{field.label}</span>
-                {field.value.trim() ? (
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-foreground line-clamp-2">{field.label}</p>
+                  {field.description && <p className="mt-1 text-[10px] text-muted-foreground line-clamp-2">{field.description}</p>}
+                </div>
+                {field.requiresUserAction ? (
+                  <span className="shrink-0 text-xs text-muted-foreground">Needs your review</span>
+                ) : field.value.trim() ? (
                   <span className="shrink-0 text-xs text-muted-foreground">Already filled</span>
                 ) : (
-                  <button onClick={() => { setAction('application-answer'); setRequest(field.label); void generate({ action: 'application-answer', request: field.label, fieldId: field.id }); }} disabled={!selectedResumes.length || !jobData.jd || !configId || working || automationRunning} className="shrink-0 px-2 py-1.5 text-xs font-semibold text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-900/30 rounded-md disabled:opacity-40">
+                  <button onClick={() => { const request = `${field.label}${field.description ? `\n${field.description}` : ''}`; setAction('application-answer'); setRequest(request); void generate({ action: 'application-answer', request, fieldId: field.id }); }} disabled={!selectedResumes.length || !jobData.jd || !configId || working || automationRunning} className="shrink-0 px-2 py-1.5 text-xs font-semibold text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-900/30 rounded-md disabled:opacity-40">
                     Draft answer
                   </button>
                 )}

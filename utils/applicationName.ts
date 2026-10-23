@@ -29,7 +29,8 @@ export async function saveApplicationName(resumeId: string, name: ApplicationNam
 }
 
 export function confirmedNameAnswer(field: ApplicationFormField, name?: ApplicationName): string | undefined {
-  if (!validApplicationName(name) || field.value.trim() || field.type !== 'text' || field.requiresUserAction || requiresUserAction(field.label) || /\b(legal|preferred|mother|father|parent|spouse|partner|emergency|reference|referee|manager)\b|\b(?:full|complete)\s*name\b/i.test(field.label)) return;
+  const context = `${field.label} ${field.description || ''}`;
+  if (!validApplicationName(name) || field.value.trim() || field.type !== 'text' || field.requiresUserAction || requiresUserAction(context) || /\b(legal|preferred|mother|father|parent|spouse|partner|emergency|reference|referee|manager)\b|\b(?:full|complete)\s*name\b/i.test(context)) return;
   const label = field.label.replace(/^[*\s]+/, '').toLowerCase();
   const autocomplete = field.autocomplete?.trim().split(/\s+/).at(-1);
   const first = autocomplete === 'given-name' || /^(?:first\s*name|given\s*name|pr[eé]nom)\b/.test(label);

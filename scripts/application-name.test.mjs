@@ -16,7 +16,7 @@ test('confirmed names map exact ATS labels and autocomplete hints', () => {
 });
 
 test('names do not override existing values, attestations, legal/preferred names, or ambiguous labels', () => {
-  for (const candidate of [field('First name', { value: 'Already entered' }), field('Legal first name'), field('Preferred first name'), field('First name', { requiresUserAction: true }), field("Mother's first name"), field('First name of emergency contact', { autocomplete: 'given-name' }), field('Full name', { autocomplete: 'given-name' }), field('First name', { maxLength: 2 })]) {
+  for (const candidate of [field('First name', { value: 'Already entered' }), field('Legal first name'), field('Preferred first name'), field('First name', { description: 'Legal name only' }), field('First name', { requiresUserAction: true }), field("Mother's first name"), field('First name of emergency contact', { autocomplete: 'given-name' }), field('Full name', { autocomplete: 'given-name' }), field('First name', { maxLength: 2 })]) {
     assert.equal(helper.confirmedNameAnswer(candidate, name), undefined);
   }
   assert.equal(helper.validApplicationName({ firstName: 'A\nB', lastName: 'C' }), false);

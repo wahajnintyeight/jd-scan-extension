@@ -30,8 +30,17 @@ export function isApplicationFieldVisible(field: HTMLElement): boolean {
   return style.visibility !== 'hidden' && style.visibility !== 'collapse' && style.display !== 'none' && field.getClientRects().length > 0;
 }
 
-export function requiresUserAction(label: string): boolean {
-  return /\b(consent|privacy notice|privacy policy|terms and conditions|acknowledg(?:e|ment)|attest|certif(?:y|ication)|declar(?:e|ation)|signature|sign here|agree to (?:the )?(?:terms|privacy|data)|do you agree)\b/i.test(label);
+const userReviewPatterns = [
+  /\b(consent|privacy notice|privacy policy|terms and conditions|acknowledg(?:e|ment)|attest|certif(?:y|ication)|declar(?:e|ation)|signature|sign here|agree to (?:the )?(?:terms|privacy|data)|do you agree)\b/i,
+  /\b(legally (?:authorized|able|allowed|permitted|entitled) to work|legally work|lawfully work|authorized to work|eligible to work|right to work|permission to work|work eligibility|employment eligibility|work authorization|work permit|visa|sponsorship|citizenship|citizen|immigration status|export control)\b/i,
+  /\b(demographic|self[- ]identification|gender|pronouns|race|ethnicity|hispanic|veteran|disabilit\w*|medical|health condition|pregnan\w*)\b/i,
+  /\b(salary|compensation|pay expectations|current salary|expected salary|hourly rate)\b/i,
+  /\b(availability|available to start|when can you start|what date can you start|start date|notice period|willing to relocate|able to relocate|willing to travel|weekend shifts|shift work|full[\s-]?time on[\s-]?site|work on[\s-]?site|able to work on[\s-]?site)\b/i,
+  /\b(background check|background screening|criminal history|criminal record|convicted|misdemeanor|felony|drug test|reference check|military service|military obligations|military status|date of birth|birth date|age|passport number|national id|social security number|tax identification|home address|street address|mailing address|postal address|residential address|zip code|postal code)\b/i,
+];
+
+export function requiresUserAction(context: string): boolean {
+  return userReviewPatterns.some((pattern) => pattern.test(context));
 }
 
 export function getApplicationFormRoots(): Element[] {
