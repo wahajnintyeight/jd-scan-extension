@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { X, Minimize2, Maximize2, Settings } from 'lucide-react';
+import { clampOverlayPosition, overlayGeometry } from '../utils/overlayGeometry';
 
 interface FloatingOverlayProps {
   onClose: () => void;
@@ -12,24 +13,19 @@ interface FloatingOverlayProps {
 export default function FloatingOverlay({ onClose, onOpenSettings, children, initialX, initialY }: FloatingOverlayProps) {
   const [isMinimized, setIsMinimized] = useState(false);
   const [pos, setPos] = useState({
-    x: initialX ?? Math.max(window.innerWidth - 420, 0),
+    x: initialX ?? overlayGeometry(window.innerWidth, window.innerHeight).maxX,
     y: initialY ?? 24,
   });
   const dragging = useRef(false);
   const offset = useRef({ x: 0, y: 0 });
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  const OVERLAY_W = Math.min(400, Math.max(280, window.innerWidth - 24));
-  const OVERLAY_H = Math.min(isMinimized ? 40 : 580, Math.max(40, window.innerHeight - 24));
+  const bounds = overlayGeometry(window.innerWidth, window.innerHeight, isMinimized);
 
   useEffect(() => {
     const keepInViewport = () => {
-      const width = Math.min(400, Math.max(280, window.innerWidth - 24));
-      const height = Math.min(isMinimized ? 40 : 580, Math.max(40, window.innerHeight - 24));
-      setPos(current => ({
-        x: Math.max(0, Math.min(window.innerWidth - width, current.x)),
-        y: Math.max(12, Math.min(window.innerHeight - height - 12, current.y)),
-      }));
+      const nextBounds = overlayGeometry(window.innerWidth, window.innerHeight, isMinimized);
+      setPos(current => clampOverlayPosition(current, nextBounds));
     };
     keepInViewport();
     window.addEventListener('resize', keepInViewport);
@@ -48,9 +44,7 @@ export default function FloatingOverlay({ onClose, onOpenSettings, children, ini
 
     const onMouseMove = (me: MouseEvent) => {
       if (!dragging.current) return;
-      const newX = Math.max(0, Math.min(window.innerWidth - OVERLAY_W, me.clientX - offset.current.x));
-      const newY = Math.max(12, Math.min(window.innerHeight - OVERLAY_H - 12, me.clientY - offset.current.y));
-      setPos({ x: newX, y: newY });
+      setPos(clampOverlayPosition({ x: me.clientX - offset.current.x, y: me.clientY - offset.current.y }, bounds));
     };
 
     const onMouseUp = () => {
@@ -61,7 +55,7 @@ export default function FloatingOverlay({ onClose, onOpenSettings, children, ini
 
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
-  }, [pos, OVERLAY_W, OVERLAY_H]);
+  }, [pos, bounds.width, bounds.height]);
 
   return (
     <div
@@ -70,8 +64,8 @@ export default function FloatingOverlay({ onClose, onOpenSettings, children, ini
         position: 'fixed',
         left: pos.x,
         top: pos.y,
-        width: OVERLAY_W,
-        height: OVERLAY_H,
+        width: bounds.width,
+        height: bounds.height,
         zIndex: 2147483646,
         display: 'flex',
         flexDirection: 'column',
@@ -91,7 +85,7 @@ export default function FloatingOverlay({ onClose, onOpenSettings, children, ini
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '4px 10px',
+          padding: '0 8px',
           background: 'oklch(var(--jd-card))',
           color: 'oklch(var(--jd-foreground))',
           borderBottom: '1px solid oklch(var(--jd-border))',
@@ -99,7 +93,7 @@ export default function FloatingOverlay({ onClose, onOpenSettings, children, ini
           flexShrink: 0,
           userSelect: 'none',
           WebkitUserSelect: 'none',
-          height: 40,
+          height: 44,
           boxSizing: 'border-box',
         }}
       >
@@ -120,7 +114,7 @@ export default function FloatingOverlay({ onClose, onOpenSettings, children, ini
               <path d="M3 7h18M3 12h18M3 17h18" />
             </svg>
           </div>
-          <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.01em' }}>JD Scan</span>
+          <span style={{ fontSize: 'var(--jd-text-body)', fontWeight: 600, letterSpacing: '-0.01em' }}>JD Scan</span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -129,7 +123,7 @@ export default function FloatingOverlay({ onClose, onOpenSettings, children, ini
               onClick={onOpenSettings}
               title="Settings"
               aria-label="Open settings"
-              style={{ width: 32, height: 32, borderRadius: 6, background: 'transparent', border: 'none', color: 'oklch(var(--jd-foreground))', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              style={{ width: 44, height: 44, borderRadius: 6, background: 'transparent', border: 'none', color: 'oklch(var(--jd-foreground))', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               onMouseEnter={e => (e.currentTarget.style.background = 'oklch(var(--jd-muted))')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             >
@@ -141,8 +135,8 @@ export default function FloatingOverlay({ onClose, onOpenSettings, children, ini
             title={isMinimized ? 'Expand' : 'Minimize'}
             aria-label={isMinimized ? 'Expand assistant' : 'Minimize assistant'}
             style={{
-              width: 28,
-              height: 28,
+              width: 44,
+              height: 44,
               borderRadius: 6,
               background: 'transparent',
               border: 'none',
@@ -165,8 +159,8 @@ export default function FloatingOverlay({ onClose, onOpenSettings, children, ini
             title="Close"
             aria-label="Close assistant"
             style={{
-              width: 28,
-              height: 28,
+              width: 44,
+              height: 44,
               borderRadius: 6,
               background: 'transparent',
               border: 'none',
@@ -187,7 +181,7 @@ export default function FloatingOverlay({ onClose, onOpenSettings, children, ini
 
       {/* Content */}
       {!isMinimized && (
-        <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+        <div style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
           {children}
         </div>
       )}

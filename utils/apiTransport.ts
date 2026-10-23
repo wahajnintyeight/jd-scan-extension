@@ -1,5 +1,5 @@
 const configuredApiUrl = import.meta.env?.VITE_API_BASE_URL;
-export const API_BASE_URL =  configuredApiUrl
+export const API_BASE_URL = configuredApiUrl || 'https://api.theprojectphoenix.top/v2/api';
 
 interface ApiProxyResponse {
   success: boolean;

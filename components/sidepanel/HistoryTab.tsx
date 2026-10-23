@@ -4,7 +4,7 @@ export default function HistoryTab() {
   return (
     <section className="animate-in">
       <div className="py-16 flex flex-col items-center justify-center text-center space-y-4">
-        <div className="w-16 h-16 bg-muted rounded-2xl flex items-center justify-center text-muted-foreground/30">
+        <div className="w-16 h-16 bg-muted rounded-2xl flex items-center justify-center text-muted-foreground">
           <History className="w-8 h-8" />
         </div>
         <div>

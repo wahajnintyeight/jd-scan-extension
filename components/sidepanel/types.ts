@@ -1,4 +1,5 @@
 export interface JobData {
+  sourceUrl?: string;
   jd: string;
   title: string;
   company: string;

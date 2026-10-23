@@ -10,6 +10,9 @@ export class GenericAdapter extends BaseAdapter implements SiteAdapter {
     }
 
     getJobData(): JobData {
+        if (window.location.hostname === 'jobs.ashbyhq.com' && /\/application\/?$/.test(window.location.pathname)) {
+            return this.createJobData('', this.getElementText(document.querySelector('h1')), '', null);
+        }
         let jd = "";
         let jobElement: Element | null = null;
         let debug: any = { method: 'generic-heuristic', tried: [] };
@@ -22,7 +25,7 @@ export class GenericAdapter extends BaseAdapter implements SiteAdapter {
             // in one large content container. Strip that subtree before scoring
             // the page so form labels and controls never become part of the JD.
             const copy = section.cloneNode(true) as Element;
-            copy.querySelectorAll('form, [role="form"]').forEach(form => form.remove());
+            copy.querySelectorAll('form, [role="form"], .ashby-application-form-container, script, style, noscript').forEach(form => form.remove());
             return this.getElementText(copy);
         };
 
@@ -67,8 +70,9 @@ export class GenericAdapter extends BaseAdapter implements SiteAdapter {
 
         const title = this.getElementText(document.querySelector("h1")) || 
                       this.getElementText(document.querySelector("title"));
-        const isGreenhouse = window.location.hostname.endsWith('greenhouse.io');
-        const companySlug = isGreenhouse ? window.location.pathname.split('/').filter(Boolean)[0] : '';
+        const host = window.location.hostname;
+        const usesCompanySlug = host === 'jobs.ashbyhq.com' || host === 'job-boards.greenhouse.io' || host === 'boards.greenhouse.io';
+        const companySlug = usesCompanySlug ? window.location.pathname.split('/').filter(Boolean)[0] : '';
         const company = companySlug
             ? companySlug.replace(/[-_]+/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())
             : '';

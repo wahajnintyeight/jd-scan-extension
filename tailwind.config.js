@@ -1,3 +1,14 @@
+import defaultTheme from 'tailwindcss/defaultTheme.js';
+
+// Shadow-root rem units still use the host page's font size; generate fixed extension units instead.
+export function withPixelUnits(value) {
+    if (typeof value === 'string') return value.replace(/(-?(?:\d*\.)?\d+)rem\b/g, (_, size) => `${Number(size) * 16}px`);
+    if (typeof value === 'function') return (...args) => withPixelUnits(value(...args));
+    if (Array.isArray(value)) return value.map(withPixelUnits);
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, withPixelUnits(entry)]));
+    return value;
+}
+
 /** @type {import('tailwindcss').Config} */
 export default {
     darkMode: ["class"],
@@ -6,6 +17,7 @@ export default {
         "./components/**/*.{js,ts,jsx,tsx}",
     ],
     theme: {
+        ...withPixelUnits(defaultTheme),
         extend: {
             colors: {
                 border: "oklch(var(--jd-border) / <alpha-value>)",

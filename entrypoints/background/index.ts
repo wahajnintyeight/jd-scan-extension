@@ -13,15 +13,17 @@ export default defineBackground({
 
         // Handle messages from sidepanel or content script
         chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+            const sourceTab = sender.tab;
+            const tabQuery = { active: true, ...(sourceTab?.windowId === undefined ? { currentWindow: true } : { windowId: sourceTab.windowId }) };
             if (request?.type === 'JD_SCAN_DRAFT_APPLICATION_FIELD') {
-                if (sender.id !== chrome.runtime.id || sender.frameId !== 0 || !Number.isInteger(sender.tab?.id) ||
+                if (sender.id !== chrome.runtime.id || sender.frameId !== 0 || !sourceTab || typeof sourceTab.id !== 'number' || !Number.isInteger(sourceTab.id) ||
                     typeof request.fieldId !== 'string' || typeof request.fieldLabel !== 'string' || request.fieldLabel.length > 300 ||
-                    typeof request.fieldType !== 'string' || typeof request.expectedUrl !== 'string' || sender.tab.url !== request.expectedUrl) {
+                    typeof request.fieldType !== 'string' || typeof request.expectedUrl !== 'string' || sourceTab.url !== request.expectedUrl) {
                     sendResponse({ success: false, error: 'Untrusted field-draft request.' });
                     return false;
                 }
-                draftApplicationField({ tabId: sender.tab.id, fieldId: request.fieldId, fieldLabel: request.fieldLabel,
-                    fieldType: request.fieldType, expectedUrl: request.expectedUrl })
+                draftApplicationField({ tabId: sourceTab.id, fieldId: request.fieldId, fieldLabel: request.fieldLabel,
+                    fieldType: request.fieldType, expectedUrl: request.expectedUrl }, sourceTab.windowId)
                     .then(result => sendResponse({ success: true, ...result }))
                     .catch(error => sendResponse({ success: false, error: error instanceof Error ? error.message : 'Could not draft this answer.' }));
                 return true;
@@ -31,7 +33,7 @@ export default defineBackground({
                     sendResponse({ success: false, error: 'Untrusted application run.' });
                     return false;
                 }
-                runApplication(request.input || {}).then(result => sendResponse({ success: true, ...result }))
+                runApplication(request.input || {}, sourceTab?.windowId).then(result => sendResponse({ success: true, ...result }))
                     .catch(error => sendResponse({ success: false, error: error instanceof Error ? error.message : 'Could not start the application run.' }));
                 return true;
             }
@@ -54,7 +56,6 @@ export default defineBackground({
                     return false;
                 }
                 const tabs = browser.tabs ?? chrome.tabs;
-                const sourceTab = sender.tab;
                 if (sourceTab?.active && Number.isInteger(sourceTab.id) && /^https?:\/\//i.test(sourceTab.url || '')) {
                     sendResponse({ success: true, tab: { id: sourceTab.id, url: sourceTab.url } });
                     return false;
@@ -63,7 +64,7 @@ export default defineBackground({
                     sendResponse({ success: false, error: "JD Scan cannot access browser tabs in its background worker. Reload the extension from the production build and restart the browser if needed." });
                     return false;
                 }
-                tabs.query({ active: true, currentWindow: true })
+                tabs.query(tabQuery)
                     .then(([tab]) => sendResponse(tab && Number.isInteger(tab.id) && /^https?:\/\//i.test(tab.url || '') &&
                         (sender.tab?.id === undefined || sender.tab.id === tab.id)
                         ? { success: true, tab: { id: tab.id, url: tab.url } }
@@ -91,7 +92,7 @@ export default defineBackground({
                 const activeTab = sender.tab?.active && sender.tab.id === request.tabId
                     ? Promise.resolve(sender.tab)
                     : typeof tabs.query === "function"
-                        ? tabs.query({ active: true, currentWindow: true }).then(([tab]) => tab)
+                        ? tabs.query(tabQuery).then(([tab]) => tab)
                         : Promise.reject(new Error("JD Scan cannot verify the active tab. Open the application tab and try again."));
                 activeTab
                     .then((tab) => {
@@ -176,37 +177,10 @@ export default defineBackground({
                 return true;
             }
 
-            if (request.type === "SCAN_REQUEST") {
-                console.log("Scan request received in background", request.data);
-
-                // Proxy to Go backend
-                fetch("http://localhost:8080/api/scan", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(request.data),
-                })
-                    .then(res => {
-                        if (!res.ok) throw new Error(`Backend error: ${res.statusText}`);
-                        return res.json();
-                    })
-                    .then(data => {
-                        console.log("Scan complete, sending results to UI");
-                        chrome.runtime.sendMessage({ type: "SCAN_COMPLETE", data });
-                    })
-                    .catch(err => {
-                        console.error("Scan failed:", err);
-                        chrome.runtime.sendMessage({
-                            type: "SCAN_COMPLETE",
-                            error: err.message,
-                            data: [] // Empty results on error
-                        });
-                    });
-            }
-
-            if (request.type === "JD_FOUND") {
+            if (request.type === "JD_FOUND" && sender.id === chrome.runtime.id && sender.tab?.url && sender.frameId === 0) {
                 console.log("JD found via content script, broadcasting to sidepanel");
                 // Re-broadcast to anyone listening (e.g., sidepanel)
-                chrome.runtime.sendMessage(request).catch(() => {
+                chrome.runtime.sendMessage({ type: "JD_FOUND", data: request.data, url: sender.tab.url, tabId: sender.tab.id }).catch(() => {
                     // Ignore error if sidepanel isn't open
                 });
             }
@@ -219,7 +193,7 @@ export default defineBackground({
                     console.log("Detected job page, triggering extraction");
                     chrome.tabs.sendMessage(tabId, { type: "GET_JD" }, (response) => {
                         if (response && response.data) {
-                            chrome.runtime.sendMessage({ type: "JD_FOUND", data: response.data }).catch(() => { });
+                            chrome.runtime.sendMessage({ type: "JD_FOUND", data: response.data, url: tab.url, tabId }).catch(() => { });
                         }
                     });
                 }

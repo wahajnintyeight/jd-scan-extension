@@ -1,17 +1,19 @@
 {
-  "date": "2026-10-09",
-  "scope": "extension UI: sidepanel dashboard, popup, settings page, floating overlay",
+  "date": "2026-10-22",
+  "scope": "component: responsive settings modal, settings page, and floating assistant",
   "findings": {
-    "existingDesignSystem": false,
-    "hallmarkHistory": false,
-    "palette": "duplicated warm orange/charcoal tokens with a separate blue Tailwind brand scale",
-    "fonts": "Inter and Outfit linked by sidepanel and popup; no font links in settings",
-    "motion": "motion package installed",
-    "surfaces": ["sidepanel dashboard", "browser popup", "settings page"]
+    "existingDesignSystem": ".hallmark/design.md",
+    "palette": "Slate and Teal OKLCH tokens in tokens.css",
+    "fonts": "Inter body, Space Grotesk display, JetBrains Mono technical values",
+    "motion": "motion 12; short state feedback with reduced-motion support",
+    "spacing": "Tailwind 4px scale; fixed extension units isolate host-page root font sizes",
+    "framework": "React 19, WXT, Tailwind 3"
   },
-  "proposal": {
-    "genre": "modern-minimal",
-    "theme": "Cobalt",
-    "appMacrostructure": "Workbench"
-  }
+  "preserved": [
+    "palette",
+    "font families",
+    "routes",
+    "component ownership",
+    "settings behavior"
+  ]
 }

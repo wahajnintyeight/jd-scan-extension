@@ -1,5 +1,7 @@
 /* Hallmark · macrostructure: Workbench · genre: modern-minimal · theme: Slate and Teal · design-system: .hallmark/design.md · pre-emit critique: P4 H5 E4 S4 R5 V4 · post-emit: mobile no-overflow at 320/375/414/768 · contrast: core light/dark text pairs >=4.5:1 */
 @import "../../tokens.css";
+@import "../../styles/settings.css";
+@import "../../styles/workspace.css";
 
 @tailwind base;
 @tailwind components;
@@ -15,11 +17,20 @@
     overflow-x: clip;
   }
 
+  #root { height: 100dvh; }
+
   body {
     @apply bg-background text-foreground;
     font-family: var(--jd-font-sans);
     line-height: 1.45;
     -webkit-font-smoothing: antialiased;
+  }
+
+  .jd-scan-theme {
+    font-family: var(--jd-font-sans);
+    font-size: var(--jd-text-body);
+    line-height: 1.5;
+    text-align: start;
   }
 
   h1, h2, h3 { min-width: 0; overflow-wrap: anywhere; }

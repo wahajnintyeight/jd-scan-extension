@@ -4,7 +4,7 @@ import { parseHTML, DOMParser } from 'linkedom';
 import { load } from './extensionHarness.mjs';
 
 const jobUrl = 'https://jobs.smartrecruiters.com/oneclick-ui/company/ABOUTYOUGmbH/publication/7f122e45-9dd7-4985-9a42-8a856ad1d550?dcr_ci=ABOUTYOUGmbH';
-const job = { title: 'React Engineer', company: 'ABOUT YOU', jd: 'Develop accessible React and TypeScript applications. Work with designers and review code. At least four years of frontend experience.' };
+const job = { title: 'React Engineer', company: 'ABOUT YOU', sourceUrl: 'https://example.com/jobs/react', jd: 'Develop accessible React and TypeScript applications. Work with designers and review code. At least four years of frontend experience.' };
 
 test('application link resolves to its exact public posting API', async () => {
   const helper = await load('utils/smartRecruiters.ts', {}, { DOMParser });
@@ -73,7 +73,7 @@ test('a failed job read preserves the previously prepared context', async () => 
   assert.equal(writes, 0);
 });
 
-async function applicationRunner(switchTab = false) {
+async function applicationRunner(switchTab = false, sourceUrl = job.sourceUrl) {
   let current = { id: 7, url: 'https://example.com/jobs/react' };
   let value = '';
   const actions = [];
@@ -86,7 +86,7 @@ async function applicationRunner(switchTab = false) {
       if (message.type === 'FILL_APPLICATION_FIELDS') { value = message.fields[0].value; return { success: true, filled: 1 }; }
       if (message.type === 'ADVANCE_APPLICATION_STEP') return { success: true, finalActionFound: true, clicked: false };
       return { success: true, applicationContext: current.url === jobUrl, url: current.url,
-        fields: current.url === jobUrl ? [{ id: 'field-0', label: 'First name', type: 'text', value, required: true }] : [] };
+        fields: current.url === jobUrl ? [{ id: 'field-0', label: switchTab ? 'Email' : 'First name', type: switchTab ? 'email' : 'text', value, required: true }] : [] };
     },
   }, storage: { local: { set: async record => { saved = record.jdScan_applicationRun; } } } };
   const helper = await load('entrypoints/background/applicationRun.ts', api, {
@@ -98,7 +98,7 @@ async function applicationRunner(switchTab = false) {
       return { success: true, text: '{"answers":[{"id":"field-0","value":"Test","needsUser":false}]}' };
     },
   });
-  const result = await helper.runApplication({ tabId: 7, configId: 'provider', resume: 'Test Candidate\nFrontend engineer with React experience.', job });
+  const result = await helper.runApplication({ tabId: 7, configId: 'provider', resume: 'Test Candidate\nFrontend engineer with React experience.', ...(switchTab ? {} : { applicationName: { firstName: 'Test', lastName: 'Candidate' } }), job: { ...job, sourceUrl } });
   return { result, actions, saved, value };
 }
 
@@ -118,4 +118,13 @@ test('switching tabs during model generation stops the worker before filling', a
   const { result, actions } = await applicationRunner(true);
   assert.match(result.error, /Switch back/);
   assert.equal(actions.includes('FILL_APPLICATION_FIELDS'), false);
+});
+
+test('a job from another posting is rejected before reading fields or contacting AI', async () => {
+  for (const url of ['https://example.com/jobs/another', '']) {
+    const { result, actions, value } = await applicationRunner(false, url);
+    assert.match(result.error, /prepared job does not match/);
+    assert.equal(actions.length, 0);
+    assert.equal(value, '');
+  }
 });

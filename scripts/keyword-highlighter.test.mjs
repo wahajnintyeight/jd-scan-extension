@@ -1,19 +1,8 @@
-/**
- * Tests for keyword highlighting functionality
- */
-
-import { highlightKeywords, HighlightConfig } from '../keywordHighlighter';
-
-// Mock DOM for testing
-const mockDocument = {
-  createElement: (tag: string) => ({
-    textContent: '',
-    innerHTML: ''
-  })
-};
-
-// @ts-ignore
-global.document = mockDocument;
+import assert from 'node:assert/strict';
+import { test, describe } from 'node:test';
+import { parseHTML } from 'linkedom';
+import { load } from './extensionHarness.mjs';
+const { highlightKeywords } = await load('utils/keywordHighlighter.ts', {});
 
 describe('Keyword Highlighting', () => {
   const sampleJobDescription = `
@@ -29,7 +18,7 @@ describe('Keyword Highlighting', () => {
     Education: Computer Science degree
   `;
 
-  const testConfig: HighlightConfig = {
+  const testConfig = {
     matchedColor: '#059669',
     unmatchedColor: '#dc2626',
     matchedBgColor: '#d1fae5',
@@ -40,37 +29,37 @@ describe('Keyword Highlighting', () => {
   test('should highlight matched and unmatched keywords', () => {
     const result = highlightKeywords(sampleJobDescription, sampleResume, testConfig);
     
-    expect(result.highlightedHtml).toContain('test-highlight');
-    expect(result.highlightedHtml).toContain('test-highlight--matched');
-    expect(result.highlightedHtml).toContain('test-highlight--unmatched');
-    expect(result.stats.totalKeywords).toBeGreaterThan(0);
-    expect(result.stats.matchedCount).toBeGreaterThan(0);
-    expect(result.stats.unmatchedCount).toBeGreaterThan(0);
+    assert.ok(result.highlightedHtml.includes('test-highlight'));
+    assert.ok(result.highlightedHtml.includes('test-highlight--matched'));
+    assert.ok(result.highlightedHtml.includes('test-highlight--unmatched'));
+    assert.ok(result.stats.totalKeywords > 0);
+    assert.ok(result.stats.matchedCount > 0);
+    assert.ok(result.stats.unmatchedCount > 0);
   });
 
   test('should handle empty inputs gracefully', () => {
     const result = highlightKeywords('', '', testConfig);
     
-    expect(result.highlightedHtml).toBe('');
-    expect(result.stats.totalKeywords).toBe(0);
-    expect(result.stats.matchedCount).toBe(0);
-    expect(result.stats.unmatchedCount).toBe(0);
+    assert.equal(result.highlightedHtml, '');
+    assert.equal(result.stats.totalKeywords, 0);
+    assert.equal(result.stats.matchedCount, 0);
+    assert.equal(result.stats.unmatchedCount, 0);
   });
 
   test('should identify JavaScript as matched keyword', () => {
     const result = highlightKeywords(sampleJobDescription, sampleResume, testConfig);
     
     // JavaScript should be highlighted as matched (green)
-    expect(result.highlightedHtml).toContain('JavaScript');
-    expect(result.highlightedHtml).toContain('test-highlight--matched');
+    assert.ok(result.highlightedHtml.includes('JavaScript'));
+    assert.ok(result.highlightedHtml.includes('test-highlight--matched'));
   });
 
   test('should identify AWS as unmatched keyword', () => {
     const result = highlightKeywords(sampleJobDescription, sampleResume, testConfig);
     
     // AWS should be highlighted as unmatched (red) since it's not in the resume
-    expect(result.highlightedHtml).toContain('AWS');
-    expect(result.highlightedHtml).toContain('test-highlight--unmatched');
+    assert.ok(result.highlightedHtml.includes('AWS'));
+    assert.ok(result.highlightedHtml.includes('test-highlight--unmatched'));
   });
 
   test('should preserve original text structure', () => {
@@ -80,9 +69,8 @@ describe('Keyword Highlighting', () => {
     const result = highlightKeywords(simpleText, simpleResume, testConfig);
     
     // Should contain the original words even if highlighted
-    expect(result.highlightedHtml).toContain('Looking for');
-    expect(result.highlightedHtml).toContain('and');
-    expect(result.highlightedHtml).toContain('developers');
+    const { document } = parseHTML(`<div>${result.highlightedHtml}</div>`);
+    assert.equal(document.querySelector('div').textContent, simpleText);
   });
 
   test('should handle special characters in keywords', () => {
@@ -91,7 +79,7 @@ describe('Keyword Highlighting', () => {
     
     const result = highlightKeywords(textWithSpecialChars, resumeWithSpecialChars, testConfig);
     
-    expect(result.highlightedHtml).toContain('Node.js');
-    expect(result.stats.totalKeywords).toBeGreaterThan(0);
+    assert.ok(result.highlightedHtml.includes('Node.js'));
+    assert.ok(result.stats.totalKeywords > 0);
   });
 });

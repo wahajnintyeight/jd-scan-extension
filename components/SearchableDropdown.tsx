@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Search, ChevronDown, Loader2 } from 'lucide-react';
 
 export interface DropdownOption {
@@ -37,11 +37,43 @@ export default function SearchableDropdown({
   const [searchQuery, setSearchQuery] = useState('');
   const [options, setOptions] = useState<DropdownOption[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [menuLayout, setMenuLayout] = useState({ above: false, maxHeight: 256 });
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onSearchRef = useRef(onSearch);
   const searchIdRef = useRef(0);
   onSearchRef.current = onSearch;
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    const fitMenu = () => {
+      const container = containerRef.current;
+      if (!container) return;
+      const field = container.getBoundingClientRect();
+      let top = 0;
+      let bottom = window.innerHeight;
+      for (let parent = container.parentElement; parent; parent = parent.parentElement) {
+        if (/auto|scroll|hidden|clip/.test(getComputedStyle(parent).overflowY)) {
+          const bounds = parent.getBoundingClientRect();
+          top = Math.max(top, bounds.top);
+          bottom = Math.min(bottom, bounds.bottom);
+        }
+      }
+      const below = bottom - field.bottom - 4;
+      const above = field.top - top - 4;
+      const openAbove = below < 160 && above > below;
+      const maxHeight = Math.max(44, Math.min(256, openAbove ? above : below));
+      setMenuLayout(current => current.above === openAbove && current.maxHeight === maxHeight
+        ? current : { above: openAbove, maxHeight });
+    };
+    fitMenu();
+    window.addEventListener('resize', fitMenu);
+    window.addEventListener('scroll', fitMenu, true);
+    return () => {
+      window.removeEventListener('resize', fitMenu);
+      window.removeEventListener('scroll', fitMenu, true);
+    };
+  }, [isOpen]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -128,6 +160,7 @@ export default function SearchableDropdown({
             if (!isOpen) setIsOpen(true);
           }}
           onFocus={() => setIsOpen(true)}
+          onKeyDown={(event) => { if (event.key === 'Escape') setIsOpen(false); }}
           placeholder={placeholder}
           disabled={disabled}
           className="w-full pl-10 pr-10 py-2.5 text-sm border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none disabled:bg-muted disabled:cursor-not-allowed"
@@ -142,9 +175,12 @@ export default function SearchableDropdown({
       </div>
 
       {isOpen && !disabled && (
-        <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-lg shadow-lg max-h-64 overflow-y-auto">
+        <div
+          className="model-picker-options absolute z-50 w-full bg-card border border-border rounded-lg shadow-lg overflow-y-auto"
+          style={{ maxHeight: menuLayout.maxHeight, ...(menuLayout.above ? { bottom: 'calc(100% + 4px)' } : { top: 'calc(100% + 4px)' }) }}
+        >
           {loading || isSearching ? (
-            <div className="flex items-center justify-center py-8">
+            <div className="flex items-center justify-center py-4">
               <Loader2 className="w-5 h-5 text-brand-600 animate-spin" />
             </div>
           ) : (

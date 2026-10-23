@@ -243,7 +243,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
 
   return (
     <MotionConfig reducedMotion="user">
-    <div className="fixed inset-0 z-[2147483647] flex items-center justify-center p-4">
+    <div className="settings-modal-root fixed inset-0 z-[2147483647] flex items-center justify-center">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -253,13 +253,14 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
       />
       
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.15 }}
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
-        className="settings-modal-dialog relative w-full max-w-4xl max-h-[90dvh] bg-background rounded-3xl shadow-2xl overflow-hidden flex flex-col"
+        className="jd-settings settings-modal-dialog relative w-full bg-background rounded-3xl shadow-2xl overflow-hidden flex flex-col"
       >
         {/* Header */}
         <div className="settings-modal-header relative flex items-center justify-between px-6 py-4 border-b border-border/50">
@@ -272,7 +273,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
           <button
             onClick={onClose}
             aria-label="Close settings"
-            className="p-2 hover:bg-muted rounded-lg transition-colors active:scale-95 group"
+            className="p-2 hover:bg-muted rounded-lg transition-colors group"
           >
             <X className="w-5 h-5 text-muted-foreground group-hover:text-foreground" />
           </button>
@@ -319,7 +320,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
         </nav>
 
         {/* Content */}
-        <div data-settings-modal-content className="flex-1 overflow-y-auto bg-background">
+        <div data-settings-modal-content className="flex-1 min-h-0 min-w-0 overflow-y-auto bg-background">
           <AnimatePresence mode="wait">
             {activeTab === 'general' ? (
               <motion.div
@@ -328,9 +329,9 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                 role="tabpanel"
                 aria-labelledby="settings-tab-general"
                 tabIndex={0}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
                 data-settings-modal-panel
                 className="p-6 space-y-6"
               >
@@ -554,9 +555,9 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                 role="tabpanel"
                 aria-labelledby="settings-tab-llm"
                 tabIndex={0}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
                 data-settings-modal-panel
                 className="p-8 space-y-6"
               >
@@ -594,15 +595,15 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      className="overflow-hidden"
+                      className="min-w-0 overflow-visible"
                     >
-                      <div className="p-6 bg-muted border-2 border-brand-200 dark:border-brand-900 rounded-2xl space-y-5">
-                        <div className="flex items-center justify-between">
+                      <div className="settings-form-card p-6 bg-muted border-2 border-brand-200 dark:border-brand-900 rounded-2xl space-y-5">
+                        <div className="settings-form-heading flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <div className="p-2 bg-brand-600 rounded-lg">
                               <Sparkles className="w-4 h-4 text-white" />
                             </div>
-                        <h4 className="text-base font-bold text-foreground">{editingConfigId ? 'Edit API Configuration' : 'New API Configuration'}</h4>
+                        <h4 className="text-base font-bold text-foreground">{editingConfigId ? 'Edit configuration' : 'New configuration'}</h4>
                           </div>
                           <button
                             onClick={() => {
@@ -615,9 +616,9 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                         </div>
 
                         <form onSubmit={handleSubmit} className="space-y-4">
-                          <div className="grid grid-cols-2 gap-4">
+                          <div className="settings-form-fields grid gap-4">
                             <div>
-                              <label className="block text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">Configuration Name (optional)</label>
+                              <label className="block text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">Name (optional)</label>
                               <input
                                 type="text"
                                 value={formData.name}
@@ -688,7 +689,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                                 onBlur={() => {
                                   if (formData.provider === 'openrouter') handleFetchOpenRouterModels(formData.apiKey);
                                 }}
-                                placeholder={editingConfigId ? 'Leave blank to keep the current key' : 'sk-...'}
+                                placeholder={editingConfigId ? 'Keep current key' : 'sk-...'}
                                 className="w-full pl-11 pr-4 py-2.5 text-sm bg-background border-2 border-border rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-colors font-mono text-foreground"
                               />
                             </div>
@@ -698,7 +699,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                             </p>
                           </div>
 
-                          <div className="flex gap-3 pt-2">
+                          <div className="settings-form-actions flex gap-3 pt-2">
                             <button
                               type="button"
                               onClick={handleTestConnection}
@@ -786,7 +787,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: idx * 0.05 }}
-                          className={`group relative flex items-center justify-between p-5 rounded-2xl border-2 transition-colors ${
+                          className={`settings-config-card group relative flex items-center justify-between p-5 rounded-2xl border-2 transition-colors ${
                             config.isActive
                               ? 'bg-background border-brand-200 dark:border-brand-900/50 hover:border-brand-300 hover:shadow-lg'
                               : 'bg-background border-border hover:border-muted-foreground/30 hover:shadow-md'
@@ -794,7 +795,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                         >
                           {/* Active Indicator */}
                           {config.isActive && (
-                            <div className="absolute top-3 right-3">
+                            <div className="settings-config-status">
                               <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-100 dark:bg-emerald-900/40 rounded-full">
                                 <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
                                 <span className="text-[9px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-tight">Active</span>
@@ -802,7 +803,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                             </div>
                           )}
 
-                          <div className="flex items-center gap-4 flex-1 min-w-0 pr-4">
+                          <div className="settings-config-info flex items-center gap-4 flex-1 min-w-0 pr-4">
                             <div className={`p-3.5 rounded-xl border-2 ${
                               config.isActive 
                                 ? 'bg-brand-100 dark:bg-brand-900/40 border-brand-200 dark:border-brand-900/50' 
@@ -817,12 +818,12 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
                                   {LLM_PROVIDERS.find(p => p.value === config.provider)?.label || config.provider}
                                 </span>
                                 <span className="text-muted-foreground/30">•</span>
-                                <span className="text-xs text-muted-foreground font-medium truncate max-w-[200px]">{config.model}</span>
+                                <span className="settings-config-model text-xs text-muted-foreground font-medium truncate max-w-[200px]">{config.model}</span>
                               </div>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2">
+                          <div className="settings-config-actions flex items-center gap-2">
                             {config.id !== CHATGPT_PLAN_CONFIG_ID && (
                               <button
                                 onClick={() => handleEdit(config)}

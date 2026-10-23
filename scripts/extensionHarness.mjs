@@ -6,8 +6,12 @@ export async function load(entry, api, globals = {}) {
     entryPoints: [entry], bundle: true, write: false, format: 'cjs', platform: 'node',
     define: { 'import.meta.env': '{"VITE_API_BASE_URL":"https://api.example.com/v2/api"}' },
     plugins: [{ name: 'extension-api', setup(builder) {
+      if (globals.pdfjs) {
+        builder.onResolve({ filter: /^pdfjs-dist$/ }, () => ({ path: 'pdfjs', namespace: 'pdf-test' }));
+        builder.onLoad({ filter: /.*/, namespace: 'pdf-test' }, () => ({ contents: 'export const GlobalWorkerOptions = globalThis.pdfjs.GlobalWorkerOptions; export const getDocument = globalThis.pdfjs.getDocument;' }));
+      }
       if (globals.complete) {
-        builder.onResolve({ filter: /utils\/api$/ }, ({ path }) => ({ path, namespace: 'completion' }));
+        builder.onResolve({ filter: /(?:utils\/api|^\.\/api)$/ }, ({ path }) => ({ path, namespace: 'completion' }));
         builder.onLoad({ filter: /.*/, namespace: 'completion' }, () => ({ contents: 'export const createLLMChatCompletion = (...args) => globalThis.complete(...args);' }));
       }
       builder.onResolve({ filter: /^wxt\// }, ({ path }) => ({ path, namespace: 'mock' }));

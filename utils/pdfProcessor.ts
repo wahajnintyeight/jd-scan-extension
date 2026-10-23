@@ -27,20 +27,25 @@ export async function extractTextFromPDF(arrayBuffer: ArrayBuffer): Promise<stri
     const pdf = await loadingTask.promise;
     console.log(`[PDF Processor] Document loaded. Pages: ${pdf.numPages}`);
 
-    let fullText = '';
+    try {
+        if (pdf.numPages > 100) throw new Error('Resume PDFs must be 100 pages or fewer.');
+        let fullText = '';
 
-    for (let i = 1; i <= pdf.numPages; i++) {
-        console.log(`[PDF Processor] Processing page ${i}...`);
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items
-            .map((item: any) => (item as any).str || '')
-            .join(' ');
-        fullText += pageText + '\n';
+        for (let i = 1; i <= pdf.numPages; i++) {
+            console.log(`[PDF Processor] Processing page ${i}...`);
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items
+                .map((item: any) => (item as any).str || '')
+                .join(' ');
+            fullText += pageText + '\n';
+            if (fullText.length > 200000) throw new Error('This resume contains too much text. Upload a shorter version.');
+            page.cleanup();
+        }
+
+        console.log(`[PDF Processor] Extraction complete. Characters extracted: ${fullText.length}`);
+        return fullText;
+    } finally {
+        await pdf.destroy();
     }
-
-    console.log(`[PDF Processor] Extraction complete. Characters extracted: ${fullText.length}`);
-    console.log(`[PDF Processor] First 200 chars: "${fullText.substring(0, 200)}"`);
-
-    return fullText;
 }

@@ -1,3 +1,8 @@
+import { findApplicationNavigation } from '../../utils/applicationNavigation';
+import { keepOverlayMounted } from '../../utils/overlayMount';
+import { isLikelyJobUrl } from '../../utils/jobPage';
+import { jobForPage } from '../../utils/jobContext';
+import { getFieldLabel, restrictedFieldPattern, fillApplicationField } from '../../utils/applicationField';
 import { defineContentScript } from "wxt/utils/define-content-script";
 import { createShadowRootUi } from "wxt/utils/content-script-ui/shadow-root";
 import ReactDOM from "react-dom/client";
@@ -6,23 +11,12 @@ import SidepanelApp from "../sidepanel/App";
 import { highlightInDOM, injectHighlightStyles, removeHighlighting, createHighlightToggleButton } from "../../utils/keywordHighlighter";
 import { getAdapter } from "../../utils/siteAdapters";
 import type { ApplicationFormField } from "../../components/sidepanel/types";
-import { queryApplicationElements, applicationAncestor, getApplicationFormRoots, applicationFieldOwner, isRequiredApplicationField, isCustomApplicationControl, requiresUserAction } from '../../utils/applicationDom';
+import { queryApplicationElements, applicationAncestor, getApplicationFormRoots, applicationFieldOwner, isRequiredApplicationField, isApplicationFieldVisible, isCustomApplicationControl, requiresUserAction } from '../../utils/applicationDom';
 import { smartRecruitersPostingApi, smartRecruitersJobData } from '../../utils/smartRecruiters';
 import "../../entrypoints/sidepanel/style.css";
 
 function isLikelyJobPage(): boolean {
-    const url = window.location.href.toLowerCase();
-    
-    const checks = {
-        linkedin: url.includes("linkedin.com/jobs") || (url.includes("linkedin.com") && (url.includes("/jobs") || url.includes("/job/"))),
-        indeed: url.includes("indeed.com"),
-        glassdoor: url.includes("glassdoor.com"),
-        wellfound: url.includes("wellfound.com"),
-        workable: url.includes("workable.com") || (url.includes("workable") && url.includes("/j/")),
-        generic: url.includes("career") || url.includes("/job/") || url.includes("/jobs/") || url.includes("apply")
-    };
-    
-    return Object.values(checks).some(check => check);
+    return isLikelyJobUrl(window.location.href);
 }
 
 // Content script overlay — SidepanelApp manages its own overlay/button UI internally
@@ -40,6 +34,7 @@ const OverlayApp = ({ colorModeTarget }: { colorModeTarget: HTMLElement }) => {
                 const currentIsJob = isLikelyJobPage();
                 console.log("JD Scan: URL changed", { from: lastUrl, to: window.location.href, isJob: currentIsJob });
                 lastUrl = window.location.href;
+                window.dispatchEvent(new Event('jdscan:location-changed'));
                 setIsJobPage(currentIsJob);
                 
                 // Clean up highlight button on URL change
@@ -150,15 +145,13 @@ export default defineContentScript({
     cssInjectionMode: "ui",
     async main(ctx) {
         console.log("JD Scan content script loaded on:", window.location.href);
-        let fieldActionContainer: HTMLElement | null = null;
-
         const ui = await createShadowRootUi(ctx, {
             name: "jd-scan-overlay",
             position: "overlay",
             alignment: "top-left",
             zIndex: 2147483647,
+            anchor: 'html',
             onMount(uiContainer, _shadow, shadowHost) {
-                fieldActionContainer = uiContainer;
                 shadowHost.id = 'jd-scan-overlay-root';
                 uiContainer.classList.add('jd-scan-theme');
                 const container = document.createElement('div');
@@ -178,31 +171,10 @@ export default defineContentScript({
             },
         });
         ui.mount();
+        ctx.onInvalidated(keepOverlayMounted(ui.shadowHost));
 
         const applicationFieldCache = new Map<string, HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>();
         let applicationFieldPageUrl = window.location.href;
-        const restrictedFieldPattern = /password|one-time[- ]?code|credit.?card|cc-number|cc-exp|cc-csc|bank.?account|routing.?number/i;
-
-        const getFieldLabel = (field: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, index: number) => {
-            const root = field.getRootNode() as Document | ShadowRoot;
-            const labelledBy = field.getAttribute('aria-labelledby')
-                ?.split(/\s+/)
-                .map((labelId) => root.getElementById(labelId)?.textContent || '')
-                .join(' ');
-            return [
-                Array.from(field.labels || []).map((item) => item.textContent || '').join(' '),
-                field.getAttribute('aria-label') || '',
-                labelledBy || '',
-                field.getAttribute('placeholder') || '',
-                field.getAttribute('name') || '',
-            ].join(' ').replace(/\s+/g, ' ').trim().slice(0, 300) || `Text field ${index + 1}`;
-        };
-
-        const isApplicationFieldVisible = (field: HTMLElement) => {
-            const style = window.getComputedStyle(field);
-            return style.visibility !== 'hidden' && style.display !== 'none' && field.getClientRects().length > 0;
-        };
-
         let smartJob: { url: string; data: ReturnType<typeof smartRecruitersJobData> } | undefined;
         const readPageJob = async () => {
             if (smartRecruitersPostingApi(window.location.href)) {
@@ -217,6 +189,10 @@ export default defineContentScript({
             }
             const { jd, title, company } = getAdapter(window.location.href).getJobData();
             if (jd.trim().length < 80) {
+                const url = window.location.href;
+                const stored = await chrome.storage.local.get('jdScan_lastJob');
+                const prepared = jobForPage(stored.jdScan_lastJob, url);
+                if (prepared && window.location.href === url) return prepared;
                 const message = getApplicationFormRoots().length
                     ? 'This page has an application form, but JD Scan could not isolate enough job details from it.'
                     : 'No readable job description found on this page.';
@@ -290,41 +266,6 @@ export default defineContentScript({
             return { fields: applicationFields, blockedRequiredCount, truncatedFieldCount, applicationContext };
         };
 
-        const fillCachedApplicationField = async (field: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, rawValue: string) => {
-            if (!field.isConnected || field.disabled || ('readOnly' in field && field.readOnly) || !isApplicationFieldVisible(field)) return false;
-            const owner = applicationFieldOwner(field);
-            if (!owner || !getApplicationFormRoots().includes(owner)) return false;
-            if (field.value.trim()) return false;
-            const type = field instanceof HTMLTextAreaElement ? 'textarea' : field instanceof HTMLSelectElement ? 'select' : field.type.toLowerCase();
-            const fieldInfo = `${getFieldLabel(field, 0)} ${field.getAttribute('autocomplete') || ''} ${field.id}`;
-            if (!['text', 'email', 'tel', 'url', 'search', 'textarea', 'select'].includes(type) || restrictedFieldPattern.test(fieldInfo) || requiresUserAction(getFieldLabel(field, 0)) || isCustomApplicationControl(field)) return false;
-
-            let value = rawValue.trim();
-            if (!value || value.length > 4000) return false;
-            if (field instanceof HTMLSelectElement) {
-                const option = Array.from(field.options).find((candidate) =>
-                    !candidate.disabled && (candidate.value === value || (candidate.textContent || '').trim().toLocaleLowerCase() === value.toLocaleLowerCase()),
-                );
-                if (!option) return false;
-                value = option.value;
-            } else if (field.maxLength >= 0 && value.length > field.maxLength) {
-                return false;
-            }
-
-            const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-            field.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
-            await new Promise((resolve) => window.setTimeout(resolve, 100));
-            if (!field.isConnected || applicationFieldPageUrl !== window.location.href) return false;
-
-            const prototype = field instanceof HTMLTextAreaElement
-                ? HTMLTextAreaElement.prototype
-                : field instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
-            Object.getOwnPropertyDescriptor(prototype, 'value')?.set?.call(field, value);
-            field.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-            field.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-            return field.value === value;
-        };
-
         const fieldActionHost = document.createElement('div');
         const fieldActionRoot = fieldActionHost.attachShadow({ mode: 'open' });
         fieldActionRoot.innerHTML = `<style>
@@ -334,7 +275,7 @@ export default defineContentScript({
           button:disabled { opacity: .7; cursor: wait; }
         </style><button type="button" aria-label="Draft an answer from my resume">Draft answer</button>`;
         fieldActionHost.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483646;pointer-events:none';
-        fieldActionContainer?.appendChild(fieldActionHost);
+        ui.uiContainer.appendChild(fieldActionHost);
         const fieldActionButton = fieldActionRoot.querySelector('button')!;
         let focusedApplicationField: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null = null;
         let focusedApplicationFieldId = '';
@@ -419,7 +360,7 @@ export default defineContentScript({
                 readPageJob().then(async data => {
                     if (data.jd.length < 80) throw new Error('No readable job description found on this page.');
                     await chrome.storage.local.set({ jdScan_lastJob: { data, timestamp: Date.now(), url: window.location.href } });
-                    chrome.runtime.sendMessage({ type: 'JD_FOUND', data }).catch(() => {});
+                    chrome.runtime.sendMessage({ type: 'JD_FOUND', data, url: window.location.href }).catch(() => {});
                     sendResponse({ success: true, data, message: `Prepared job description (${data.jd.length} characters)` });
                 }).catch(error => sendResponse({ success: false, message: error instanceof Error ? error.message : 'Could not read this job.' }));
                 return true;
@@ -475,7 +416,8 @@ export default defineContentScript({
 
             if (request.type === "GET_APPLICATION_FIELDS") {
                 const result = getApplicationFields();
-                sendResponse({ success: true, ...result, url: window.location.href });
+                const finalActionFound = Boolean(findApplicationNavigation([...applicationFieldCache.values()]).finalAction);
+                sendResponse({ success: true, ...result, finalActionFound, url: window.location.href });
                 return true;
             }
 
@@ -507,7 +449,7 @@ export default defineContentScript({
                     sendResponse({ success: false, error: `This field allows ${field.maxLength} characters; shorten the draft first.` });
                     return true;
                 }
-                void fillCachedApplicationField(field, value).then((filled) => {
+                void fillApplicationField(field, value, applicationFieldPageUrl).then((filled) => {
                     sendResponse(filled ? { success: true } : { success: false, error: 'Could not safely fill this field.' });
                 });
                 return true;
@@ -536,7 +478,7 @@ export default defineContentScript({
                             skipped++;
                             continue;
                         }
-                        if (await fillCachedApplicationField(field, candidate.value)) filled++;
+                        if (await fillApplicationField(field, candidate.value, applicationFieldPageUrl)) filled++;
                         else skipped++;
                     }
                     sendResponse({ success: true, filled, skipped });
@@ -568,34 +510,7 @@ export default defineContentScript({
                     return true;
                 }
 
-                const actions = queryApplicationElements('button, input[type="button"], input[type="submit"], [role="button"], a')
-                    .filter((element) => {
-                        const style = window.getComputedStyle(element);
-                        return !element.closest('#jd-scan-overlay-root')
-                            && style.visibility !== 'hidden' && style.display !== 'none'
-                            && element.getClientRects().length > 0
-                            && !('disabled' in element && (element as HTMLButtonElement).disabled)
-                            && element.getAttribute('aria-disabled') !== 'true';
-                    });
-                const actionLabels = (element: Element) => {
-                    const inputValue = element instanceof HTMLInputElement ? element.value : '';
-                    const visible = (inputValue || element.textContent || '').replace(/[›→]\s*$/, '').replace(/\s+/g, ' ').trim();
-                    const accessible = [element.getAttribute('aria-label') || '', element.getAttribute('title') || '']
-                        .join(' ').replace(/[›→]\s*$/, '').replace(/\s+/g, ' ').trim();
-                    return { label: (visible || accessible).slice(0, 120), cues: `${visible} ${accessible}`.slice(0, 300) };
-                };
-                const labels = actions.map((element) => ({ element, ...actionLabels(element) }));
-                const finalPattern = /\b(submit|apply|send|finish|complete|review|confirm|accept|agree|sign|pay|purchase|consent|terms|captcha|verification|verify)\b/i;
-                const finalAction = labels.find(({ cues }) => finalPattern.test(cues));
-                const nextStep = labels.find(({ element, label, cues }) => {
-                    if (finalPattern.test(cues)) return false;
-                    if (!/^(?:(?:save|save draft)\s+(?:and|&)\s+)?(?:next|continue|proceed)(?:\s+(?:to|with|application|step|page|section|questions|details))*$/i.test(label)) return false;
-                    if (element instanceof HTMLAnchorElement && new URL(element.href, window.location.href).origin !== window.location.origin) return false;
-                    const roots = getApplicationFormRoots();
-                    const owner = applicationFieldOwner(element, roots);
-                    if (!owner || !Array.from(applicationFieldCache.values()).some(field => applicationFieldOwner(field, roots) === owner)) return false;
-                    return true;
-                });
+                const { nextStep, finalAction } = findApplicationNavigation([...applicationFieldCache.values()]);
 
                 if (!nextStep) {
                     sendResponse({ success: true, clicked: false, finalActionFound: Boolean(finalAction), finalActionLabel: finalAction?.label });
@@ -607,6 +522,12 @@ export default defineContentScript({
                 window.setTimeout(() => {
                     if (!nextStep.element.isConnected || request.expectedUrl !== window.location.href) {
                         sendResponse({ success: false, error: 'The page changed before the next step could be opened.' });
+                        return;
+                    }
+                    const current = getApplicationFields();
+                    const navigation = findApplicationNavigation([...applicationFieldCache.values()]);
+                    if (current.blockedRequiredCount || current.truncatedFieldCount || current.fields.some(field => field.required && !field.value.trim()) || navigation.nextStep?.element !== nextStep.element) {
+                        sendResponse({ success: false, error: 'The form changed before continuing. Review this step and try again.' });
                         return;
                     }
                     (nextStep.element as HTMLElement).click();
@@ -628,14 +549,14 @@ export default defineContentScript({
                 const adapter = getAdapter(window.location.href);
                 const data = adapter.getJobData();
                 const jdOk = data.jd.length >= 80;
-                const key = `${data.title}::${data.company}::${data.jd.slice(0, 300)}`;
+                const key = `${window.location.href}::${data.title}::${data.company}::${data.jd.slice(0, 300)}`;
 
                 if (jdOk && key !== lastSentKey) {
                     lastSentKey = key;
                     
                     // Method 1: Try sendMessage
                     try {
-                        chrome.runtime.sendMessage({ type: "JD_FOUND", data });
+                        chrome.runtime.sendMessage({ type: "JD_FOUND", data, url: window.location.href }).catch(() => {});
                     } catch (e) {
                         console.error("JD Scan: Send error", e);
                     }

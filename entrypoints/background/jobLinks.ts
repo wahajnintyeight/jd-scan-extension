@@ -24,7 +24,7 @@ export async function openAndPrepareJob(input: string) {
     try { result = await browser.tabs.sendMessage(tab.id, { type: 'GET_JD' }); } catch { continue; }
     if (result?.error) throw new Error(result.error);
     if (typeof result?.data?.jd !== 'string' || result.data.jd.trim().length < 80) continue;
-    const data = { jd: result.data.jd.slice(0, 24000), title: String(result.data.title || ''), company: String(result.data.company || '') };
+    const data = { sourceUrl: current.url, jd: result.data.jd.slice(0, 24000), title: String(result.data.title || ''), company: String(result.data.company || '') };
   await browser.storage.local.set({ jdScan_lastJob: { data, timestamp: Date.now(), url: current.url, tabId: tab.id } });
     await browser.tabs.sendMessage(tab.id, { type: 'FORCE_SHOW_BUTTON' }).catch(() => {});
     return { tabId: tab.id, data };

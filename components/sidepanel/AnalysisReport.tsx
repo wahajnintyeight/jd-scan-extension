@@ -13,20 +13,20 @@ export default function AnalysisReport({ results, resumes, onHighlight }: Analys
   return (
     <section className="space-y-4 animate-in">
       <h3 className="text-sm font-bold text-foreground font-display">Analysis Report</h3>
-      {results.map((result, idx) => {
+      {results.map((result) => {
         const resume = resumes.find((item) => item.id === result.resumeId);
         return (
-          <div key={result.resumeId} className="glass-card glass-card-hover p-4 border-l-4 border-l-brand-500" style={{ animationDelay: `${idx * 100}ms` }}>
+          <div key={result.resumeId} className="glass-card p-4">
             <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2 max-w-[180px]">
+              <div className="flex min-w-0 flex-1 items-center gap-2 pr-3">
                 <FileText className="w-4 h-4 text-brand-500 shrink-0" />
                 <span className="text-sm font-bold text-foreground truncate">{resume?.name || 'Resume'}</span>
               </div>
-              <div className="flex flex-col items-end">
+              <div className="flex shrink-0 flex-col items-end tabular-nums">
                 <span className={`text-xl font-bold font-display ${result.score >= 80 ? 'text-green-600 dark:text-green-400' : result.score >= 60 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>
                   {result.score}%
                 </span>
-                <span className="text-[9px] text-muted-foreground/60 font-medium uppercase tracking-tighter">Match Score</span>
+                <span className="text-xs text-muted-foreground font-medium uppercase tracking-tighter">Match Score</span>
               </div>
             </div>
             <div className="space-y-3 pt-2">
@@ -35,11 +35,11 @@ export default function AnalysisReport({ results, resumes, onHighlight }: Analys
               </div>
               <div className="grid grid-cols-2 gap-2 pt-2">
                 <div className="bg-green-50/50 dark:bg-green-900/20 p-2.5 rounded-xl border border-green-100/50 dark:border-green-900/50">
-                  <span className="text-[9px] font-bold text-green-700 dark:text-green-400 uppercase block mb-1">Matched</span>
+                  <span className="text-xs font-bold text-green-700 dark:text-green-400 uppercase block mb-1">Matched</span>
                   <span className="text-sm font-bold text-green-800 dark:text-green-300">{result.matchedKeywords.length}</span>
                 </div>
                 <div className="bg-rose-50/50 dark:bg-rose-900/20 p-2.5 rounded-xl border border-rose-100/50 dark:border-rose-900/50">
-                  <span className="text-[9px] font-bold text-rose-700 dark:text-rose-400 uppercase block mb-1">Missing</span>
+                  <span className="text-xs font-bold text-rose-700 dark:text-rose-400 uppercase block mb-1">Missing</span>
                   <span className="text-sm font-bold text-rose-800 dark:text-rose-300">{result.missingKeywords.length}</span>
                 </div>
               </div>

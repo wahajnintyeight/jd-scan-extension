@@ -17,10 +17,12 @@ import {
     Briefcase,
     Cpu
 } from "lucide-react";
+import { jobForPage } from '../../utils/jobContext';
+import { applicationNameKey } from '../../utils/applicationName';
 import { scanMultipleResumes } from "../../utils/atsScanner";
 import { loadSettings, saveSettings, UserSettings, DEFAULT_SETTINGS, applyColorMode } from "../../utils/settings";
 import { scanResumeATS, fetchLLMConfigs, LLMAPIConfig } from "../../utils/api";
-import { ACCEPTED_MIMES, getFileTypeConfig } from "../../components/sidepanel/resumeHelpers";
+import { getFileTypeConfig } from "../../components/sidepanel/resumeHelpers";
 import { JobData, Resume, ScanResult, UploadingFile } from "../../components/sidepanel/types";
 import SettingsModal from "../../components/SettingsModal";
 import ApplicationAgent from "../../components/ApplicationAgent";
@@ -31,7 +33,7 @@ import ResumeLibraryTab from "../../components/sidepanel/ResumeLibraryTab";
 import FloatingOverlay from "../../components/FloatingOverlay";
 import FloatingButton from "../../components/FloatingButton";
 import HighlightedJobDescription from "../../components/HighlightedJobDescription";
-import { extractTextFromPDF } from "../../utils/pdfProcessor";
+import { readResumeFile } from "../../utils/resumeFile";
 import { highlightInDOM, injectHighlightStyles } from "../../utils/keywordHighlighter";
 
 export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement } = {}) {
@@ -99,21 +101,33 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
             }
         });
 
-        // Check for any stored job data on mount
-        chrome.storage?.local?.get("jdScan_lastJob", (data: any) => {
-            if (data?.jdScan_lastJob?.data?.jd) {
-                console.log("JD Scan Sidepanel: Loaded stored job data", data.jdScan_lastJob.data);
-                setJobData(data.jdScan_lastJob.data);
-                if (!isManualMode) setIsManualMode(false);
-            }
-        });
-
+        let cancelled = false;
+        let jobRequest = 0;
+        const receiveJob = async (record: unknown) => {
+            const request = ++jobRequest;
+            try {
+                const tab = isContentScript ? null : await getActiveBrowserTab();
+                if (cancelled || request !== jobRequest) return;
+                const job = jobForPage(record, tab?.url || window.location.href, tab?.id);
+                if (job) {
+                    setJobData(job);
+                    setResults([]);
+                    setIsManualMode(false);
+                }
+            } catch { /* An inactive or internal tab cannot receive a job context. */ }
+        };
+        chrome.storage?.local?.get("jdScan_lastJob", data => void receiveJob(data?.jdScan_lastJob));
+        const clearPageJob = () => {
+            jobRequest++;
+            setJobData(previous => jobForPage({ data: previous, url: previous.sourceUrl }, window.location.href)
+                || { jd: '', title: '', company: '' });
+            setResults([]);
+            setIsManualMode(false);
+        };
+        window.addEventListener('jdscan:location-changed', clearPageJob);
         const messageListener = (msg: any) => {
-            console.log("JD Scan Sidepanel: Received message", msg.type, msg);
             if (msg.type === "JD_FOUND") {
-                console.log("JD Scan Sidepanel: Setting job data from message", msg.data);
-                setJobData(msg.data);
-                if (!isManualMode && msg.data.jd) setIsManualMode(false);
+                void receiveJob({ data: msg.data, url: msg.url, tabId: msg.tabId });
             }
             if (msg.type === "SCAN_COMPLETE") {
                 setResults(msg.data);
@@ -144,12 +158,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
                 applyColorMode(updated.colorMode, colorModeTarget);
             }
             if (namespace === 'local' && changes.jdScan_lastJob) {
-                const newData = changes.jdScan_lastJob.newValue?.data;
-                if (newData?.jd) {
-                    console.log("JD Scan Sidepanel: Received job data via storage", newData);
-                    setJobData(newData);
-                    if (!isManualMode) setIsManualMode(false);
-                }
+                void receiveJob(changes.jdScan_lastJob.newValue);
             }
         };
 
@@ -157,6 +166,8 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
         chrome.storage?.onChanged?.addListener(storageListener);
 
         return () => {
+            cancelled = true;
+            window.removeEventListener('jdscan:location-changed', clearPageJob);
             chrome.runtime?.onMessage.removeListener(messageListener);
             chrome.storage?.onChanged?.removeListener(storageListener);
         };
@@ -203,9 +214,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
     };
 
     const processFiles = useCallback(async (fileList: FileList | File[]) => {
-        const files = Array.from(fileList).filter((f) =>
-            ACCEPTED_MIMES.includes(f.type) || f.name.endsWith('.txt')
-        );
+        const files = Array.from(fileList);
 
         if (files.length === 0) return;
 
@@ -226,40 +235,10 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
             const entryId = uploadEntries[i].id;
 
             try {
-                // Simulate upload progress
-                for (let p = 0; p <= 70; p += 15) {
-                    await new Promise((r) => setTimeout(r, 80));
-                    setUploadingFiles((prev) =>
-                        prev.map((u) => u.id === entryId ? { ...u, progress: p } : u)
-                    );
-                }
-
-                // Processing phase
                 setUploadingFiles((prev) =>
-                    prev.map((u) => u.id === entryId ? { ...u, progress: 80, status: "processing" } : u)
+                    prev.map((u) => u.id === entryId ? { ...u, status: "processing" } : u)
                 );
-
-                let content = "";
-                console.log(`[Resume Process] Processing file: ${file.name}, type: ${file.type}`);
-
-                if (file.type === "text/plain" || file.name.toLowerCase().endsWith('.txt')) {
-                    console.log(`[Resume Process] Extracting text from TXT file`);
-                    content = await file.text();
-                } else if (file.type === "application/pdf" || file.name.toLowerCase().endsWith('.pdf')) {
-                    console.log(`[Resume Process] Extracting text from PDF file`);
-                    const arrayBuffer = await file.arrayBuffer();
-                    content = await extractTextFromPDF(arrayBuffer);
-                } else if (file.name.toLowerCase().endsWith('.docx') || file.name.toLowerCase().endsWith('.doc')) {
-                    console.log(`[Resume Process] Word document detected, using placeholder (Mammoth integration needed)`);
-                    content = `Parsed content of ${file.name} (Word Doc Support Pending)`;
-                } else {
-                    console.log(`[Resume Process] Unknown file type, using placeholder`);
-                    content = `Parsed content of ${file.name}`;
-                }
-
-                console.log(`[Resume Process] Extraction complete. Length: ${content.length}`);
-
-                await new Promise((r) => setTimeout(r, 200));
+                const content = await readResumeFile(file);
 
                 setUploadingFiles((prev) =>
                     prev.map((u) => u.id === entryId ? { ...u, progress: 100, status: "done" } : u)
@@ -278,7 +257,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
                 setUploadingFiles((prev) =>
                     prev.map((u) =>
                         u.id === entryId
-                            ? { ...u, status: "error", error: "Failed to process file" }
+                            ? { ...u, status: "error", error: err instanceof Error ? err.message : "Failed to process file" }
                             : u
                     )
                 );
@@ -350,6 +329,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
         const updated = resumes.filter((r) => r.id !== id);
         setResumes(updated);
         chrome.storage?.local?.set({ resumes: updated });
+        void chrome.storage.local.remove(applicationNameKey(id)).catch(error => console.error('Could not remove the saved application name:', error));
     };
 
     const toggleResumeSelect = (id: string) => {
@@ -383,7 +363,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
             const tab = await getActiveBrowserTab();
             const response = await sendBrowserTabMessage(tab.id, { type: "GET_JD" });
             if (response?.data?.jd) {
-                setJobData(response.data);
+                setJobData({ ...response.data, sourceUrl: tab.url });
                 setIsManualMode(false);
             } else {
                 setScanError('No job description found on this page. Open a job posting or enter it manually.');
@@ -466,7 +446,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
 
     const mainContent = (
         <div
-            className="flex flex-col h-full max-w-[400px] mx-auto bg-background premium-scrollbar overflow-hidden relative"
+            className="jd-assistant flex flex-col h-full w-full min-w-0 mx-auto bg-background premium-scrollbar overflow-hidden relative"
             onDragEnter={handleDragEnter}
             onDragLeave={handleDragLeave}
             onDragOver={handleDragOver}
@@ -475,7 +455,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
             {/* Global Drag Overlay */}
             {isDragOver && (
                 <div className="absolute inset-0 z-50 bg-brand-600/10 border-2 border-dashed border-brand-400 rounded-2xl flex flex-col items-center justify-center pointer-events-none animate-in">
-                    <div className="w-20 h-20 bg-brand-100 dark:bg-brand-900/30 rounded-3xl flex items-center justify-center mb-4 shadow-lg animate-bounce-gentle">
+                    <div className="w-20 h-20 bg-brand-100 dark:bg-brand-900/30 rounded-3xl flex items-center justify-center mb-4 shadow-lg">
                         <CloudUpload className="w-10 h-10 text-brand-600" />
                     </div>
                     <p className="text-lg font-bold text-brand-700 dark:text-brand-400 font-display">Drop your resumes here</p>
@@ -485,12 +465,12 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
 
             {/* The floating window already supplies its title and controls. */}
             {!isFloatingView && (
-                <header className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-card px-3">
+                <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-card px-3">
                     <h1 className="flex items-center gap-2 text-sm font-bold text-foreground font-display">
                         <ScanLine aria-hidden="true" className="h-4 w-4 text-primary" />
                         JD Scan
                     </h1>
-                    <button onClick={() => setShowSettings(true)} className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" title="Settings" aria-label="Open settings">
+                    <button onClick={() => setShowSettings(true)} className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" title="Settings" aria-label="Open settings">
                         <Settings aria-hidden="true" className="h-4 w-4" />
                     </button>
                 </header>
@@ -507,14 +487,14 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id as any)}
                         aria-current={activeTab === tab.id ? 'page' : undefined}
-                        className={`flex-1 flex items-center justify-center min-w-0 gap-1.5 h-8 rounded-md text-xs font-semibold transition-colors duration-200 relative focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${activeTab === tab.id
+                        className={`flex-1 flex items-center justify-center min-w-0 gap-1.5 h-11 rounded-md text-xs font-semibold transition-colors duration-200 relative focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${activeTab === tab.id
                             ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 shadow-sm border border-brand-100 dark:border-brand-900'
                             : 'text-muted-foreground hover:bg-muted/50'
                             }`}
                     >
                         {tab.label}
                         {tab.badge && tab.badge > 0 && (
-                            <span className="inline-flex shrink-0 items-center justify-center h-4 min-w-4 px-1 bg-brand-600 text-white text-[9px] font-bold rounded-full">
+                            <span className="inline-flex shrink-0 items-center justify-center h-4 min-w-4 px-1 bg-brand-600 text-white text-xs font-bold rounded-full">
                                 {tab.badge}
                             </span>
                         )}
@@ -523,7 +503,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
             </nav>
 
             {/* Main Content Areas */}
-            <main className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-6 premium-scrollbar animate-in">
+            <main className="workspace-content flex-1 min-h-0 overflow-y-auto px-4 py-5 space-y-6 premium-scrollbar animate-in">
 
                 {activeTab === 'match' && (
                     <>
@@ -533,7 +513,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-foreground font-display">Target Job</h3>
                                     {!isManualMode && jobData.jd && (
-                                        <span className="flex items-center gap-1 px-1.5 py-0.5 bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 text-[10px] font-bold rounded-md border border-green-100 dark:border-green-900 uppercase tracking-tighter">
+                                        <span className="flex items-center gap-1 px-1.5 py-0.5 bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 text-xs font-bold rounded-md border border-green-100 dark:border-green-900 uppercase tracking-tighter">
                                             <Globe className="w-2.5 h-2.5" /> Auto-Synced
                                         </span>
                                     )}
@@ -542,6 +522,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
                                     <button
                                         onClick={fetchPageJD}
                                         className="p-1.5 text-muted-foreground hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg transition-colors group"
+                                        aria-label="Re-scan current tab"
                                         title="Re-scan current tab"
                                     >
                                         <RefreshCw className="w-3.5 h-3.5 group-active:rotate-180 transition-transform duration-500" />
@@ -549,6 +530,8 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
                                     <button
                                         onClick={() => setIsManualMode(!isManualMode)}
                                         className={`p-1.5 rounded-lg transition-colors ${isManualMode ? 'bg-brand-100 dark:bg-brand-900/40 text-brand-600' : 'text-muted-foreground hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-900/30'}`}
+                                        aria-label="Toggle manual input"
+                                        aria-pressed={isManualMode}
                                         title="Toggle manual input"
                                     >
                                         <PencilLine className="w-3.5 h-3.5" />
@@ -560,6 +543,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
                                 {isManualMode ? (
                                     <div className="space-y-2">
                                         <textarea
+                                            aria-label="Job description"
                                             value={jobData.jd}
                                             onChange={(e) => setJobData({ ...jobData, jd: e.target.value })}
                                             placeholder="Paste the job description here..."
@@ -568,17 +552,19 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
                                         <div className="flex gap-2">
                                             <input
                                                 type="text"
+                                                aria-label="Job title (optional)"
                                                 placeholder="Job Title (Optional)"
                                                 value={jobData.title}
                                                 onChange={(e) => setJobData({ ...jobData, title: e.target.value })}
-                                                className="flex-1 p-2 text-[10px] bg-muted/50 border border-border rounded-lg outline-none focus:border-brand-300 text-foreground"
+                                                className="min-w-0 flex-1 p-2 text-sm bg-muted/50 border border-border rounded-lg outline-none focus:border-brand-300 text-foreground"
                                             />
                                             <input
                                                 type="text"
+                                                aria-label="Company (optional)"
                                                 placeholder="Company (Optional)"
                                                 value={jobData.company}
                                                 onChange={(e) => setJobData({ ...jobData, company: e.target.value })}
-                                                className="flex-1 p-2 text-[10px] bg-muted/50 border border-border rounded-lg outline-none focus:border-brand-300 text-foreground"
+                                                className="min-w-0 flex-1 p-2 text-sm bg-muted/50 border border-border rounded-lg outline-none focus:border-brand-300 text-foreground"
                                             />
                                         </div>
                                     </div>
@@ -612,19 +598,19 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
                                         />
                                         
                                         <div className="flex items-center justify-between pt-3 mt-2 border-t border-border/50">
-                                            <span className="text-[10px] text-muted-foreground/60 font-medium">Character count: {jobData.jd.length}</span>
+                                            <span className="text-xs text-muted-foreground font-medium">Character count: {jobData.jd.length}</span>
                                             <div className="flex items-center gap-2">
                                                 {selectedResumes.length > 0 && (
                                                     <button
                                                         onClick={() => highlightOnPage(primaryResumeContent)}
-                                                        className="text-[10px] font-bold text-blue-500 hover:text-blue-600 dark:text-blue-400 uppercase tracking-tight"
+                                                        className="text-xs font-bold text-blue-500 hover:text-blue-600 dark:text-blue-400 uppercase tracking-tight"
                                                     >
                                                         Highlight on Page
                                                     </button>
                                                 )}
                                                 <button
                                                     onClick={() => setJobData({ jd: "", title: "", company: "" })}
-                                                    className="text-[10px] font-bold text-rose-500 hover:text-rose-600 dark:text-rose-400 uppercase tracking-tight"
+                                                    className="text-xs font-bold text-rose-500 hover:text-rose-600 dark:text-rose-400 uppercase tracking-tight"
                                                 >
                                                     Clear
                                                 </button>
@@ -634,7 +620,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
                                 ) : (
                                     <div className="py-6 text-center">
                                         <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mx-auto mb-3">
-                                            <Globe className="w-6 h-6 text-muted-foreground/30" />
+                                            <Globe className="w-6 h-6 text-muted-foreground" />
                                         </div>
                                         <p className="text-xs text-muted-foreground px-4 leading-relaxed">
                                             Open a job page to capture automatically or <button onClick={() => setIsManualMode(true)} className="text-brand-600 dark:text-brand-400 font-bold hover:underline">enter manually</button>.
@@ -651,7 +637,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
                                     <h3 className="text-sm font-bold text-foreground font-display">Selected Resumes</h3>
                                     <button
                                         onClick={() => setActiveTab('resumes')}
-                                        className="text-[10px] font-bold text-brand-600 dark:text-brand-400 hover:text-brand-700 flex items-center gap-0.5"
+                                        className="text-xs font-bold text-brand-600 dark:text-brand-400 hover:text-brand-700 flex items-center gap-0.5"
                                     >
                                         Manage <ChevronRight className="w-3 h-3" />
                                     </button>
@@ -688,14 +674,14 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
                                         <Cpu className="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" />
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                        <p className="text-[10px] text-brand-600 dark:text-brand-400 font-bold uppercase tracking-tight">AI Model</p>
+                                        <p className="text-xs text-brand-600 dark:text-brand-400 font-bold uppercase tracking-tight">AI Model</p>
                                         <p className="text-xs font-semibold text-foreground truncate">
                                             {selectedLLMConfig?.name?.trim() || (selectedLLMConfig ? `${selectedLLMConfig.provider}/${selectedLLMConfig.model}` : 'Unknown')}
                                         </p>
                                     </div>
                                     <button
                                         onClick={() => setShowSettings(true)}
-                                        className="text-[10px] font-bold text-brand-600 dark:text-brand-400 hover:text-brand-700 px-2 py-1 hover:bg-background/50 rounded-lg transition-colors"
+                                        className="text-xs font-bold text-brand-600 dark:text-brand-400 hover:text-brand-700 px-2 py-1 hover:bg-background/50 rounded-lg transition-colors"
                                     >
                                         Change
                                     </button>
@@ -737,7 +723,7 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
                             </div>
 
                             {(!jobData.jd || selectedResumes.length === 0) && !scanning && (
-                                <p className="text-[10px] text-center text-muted-foreground/60 px-6">
+                                <p className="text-xs text-center text-muted-foreground px-6">
                                     {!jobData.jd ? 'No job description found yet.' : 'Please select at least one resume to start.'}
                                 </p>
                             )}
@@ -780,14 +766,14 @@ export default function App({ colorModeTarget }: { colorModeTarget?: HTMLElement
             </main>
 
             {/* Footer */}
-            <footer className="px-6 py-4 bg-card border-t border-border/50">
+            <footer className="px-4 py-3 bg-card border-t border-border/50">
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60 font-medium">
-                        <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse-soft" />
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
+                        <div className="w-1.5 h-1.5 bg-primary rounded-full" />
                         Offline Storage Active
                     </div>
                     {resumes.length > 0 && (
-                        <span className="text-[10px] text-muted-foreground/60 font-medium">
+                        <span className="text-xs text-muted-foreground font-medium">
                             {selectedResumes.length}/{resumes.length} selected
                         </span>
                     )}

@@ -49,7 +49,17 @@
   --jd-font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
   --jd-font-display: "Space Grotesk", Inter, ui-sans-serif, system-ui, sans-serif;
   --jd-font-mono: "JetBrains Mono", ui-monospace, monospace;
-  --jd-radius: 0.5rem;
+  --jd-text-body: 14px;
+  --jd-text-caption: 12px;
+  --jd-text-heading: 18px;
+  --jd-text-title: 20px;
+  --jd-control-height: 44px;
+  --jd-space-2: 8px;
+  --jd-space-3: 12px;
+  --jd-space-4: 16px;
+  --jd-space-6: 24px;
+  --jd-settings-width: 760px;
+  --jd-radius: 8px;
   --jd-shadow-soft: 0 1px 2px oklch(0.2 0.025 255 / 0.06), 0 8px 24px -20px oklch(0.2 0.025 255 / 0.18);
   --jd-shadow-sm: 0 1px 2px oklch(0.2 0.025 255 / 0.08);
   --jd-shadow-md: 0 2px 8px -4px oklch(0.2 0.025 255 / 0.12);

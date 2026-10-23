@@ -24,6 +24,12 @@ export function isRequiredApplicationField(element: Element): boolean {
   return element.hasAttribute('required') || element.getAttribute('aria-required') === 'true';
 }
 
+export function isApplicationFieldVisible(field: HTMLElement): boolean {
+  if (applicationAncestor(field, element => element.hasAttribute('hidden') || element.hasAttribute('inert') || element.getAttribute('aria-hidden') === 'true')) return false;
+  const style = window.getComputedStyle(field);
+  return style.visibility !== 'hidden' && style.visibility !== 'collapse' && style.display !== 'none' && field.getClientRects().length > 0;
+}
+
 export function requiresUserAction(label: string): boolean {
   return /\b(consent|privacy notice|privacy policy|terms and conditions|acknowledg(?:e|ment)|attest|certif(?:y|ication)|declar(?:e|ation)|signature|sign here|agree to (?:the )?(?:terms|privacy|data)|do you agree)\b/i.test(label);
 }
@@ -40,6 +46,12 @@ export function getApplicationFormRoots(): Element[] {
   if (window.location.hostname === 'jobs.smartrecruiters.com' && window.location.pathname.startsWith('/oneclick-ui/')) {
     const root = document.querySelector('oc-oneclick-form');
     if (root && queryApplicationElements('input, textarea', root).length) forms.push(root);
+  }
+  if (window.location.hostname === 'jobs.ashbyhq.com') {
+    for (const root of document.querySelectorAll('.ashby-application-form-container')) {
+      if (!applicationAncestor(root, element => element.id === 'jd-scan-overlay-root') && !forms.includes(root)
+          && root.querySelector('input, textarea, select')) forms.push(root);
+    }
   }
   return forms;
 }

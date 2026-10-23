@@ -1,3 +1,5 @@
+import ApplicationNameForm from './sidepanel/ApplicationNameForm';
+import { loadApplicationName, confirmedNameAnswer } from '../utils/applicationName';
 import { useEffect, useMemo, useState } from 'react';
 import { Bot, Clipboard, ExternalLink, Loader2, Sparkles } from 'lucide-react';
 import { createLLMChatCompletion } from '../utils/api';
@@ -6,6 +8,7 @@ import { getActiveBrowserTab, sendBrowserTabMessage, openBrowserJobLink, runBrow
 import { smartRecruitersPostingApi } from '../utils/smartRecruiters';
 import { buildApplicationAgentMessages } from '../utils/llmAgent';
 import type { ApplicationAgentAction } from '../utils/llmAgent';
+import { sameJobPage } from '../utils/jobContext';
 import type { ApplicationFormField, JobData, Resume } from './sidepanel/types';
 
 interface ApplicationAgentProps {
@@ -13,6 +16,7 @@ interface ApplicationAgentProps {
   selectedResumes: Resume[];
   llmConfigs: LLMAPIConfig[];
   selectedLLMConfigId?: string;
+  onSelectedLLMConfigChange: (id: string) => void;
   onConfigureProviders: () => void;
   onJobPrepared: (job: JobData) => void;
 }
@@ -26,7 +30,7 @@ const ACTIONS: Array<{ id: ApplicationAgentAction; label: string }> = [
   { id: 'custom', label: 'Custom request' },
 ];
 
-export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs, selectedLLMConfigId, onConfigureProviders, onJobPrepared }: ApplicationAgentProps) {
+export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs, selectedLLMConfigId, onSelectedLLMConfigChange, onConfigureProviders, onJobPrepared }: ApplicationAgentProps) {
   const activeConfigs = useMemo(() => llmConfigs.filter((config) => config.isActive), [llmConfigs]);
   const [configId, setConfigId] = useState(selectedLLMConfigId || '');
   const [action, setAction] = useState<ApplicationAgentAction>('cover-letter');
@@ -108,17 +112,19 @@ export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs,
     setStatus('');
     setOutput('');
     setDraftFieldId(draft?.fieldId || null);
-    const result = await createLLMChatCompletion(configId, buildApplicationAgentMessages({
-      action: requestedAction,
-      resume: resume.content,
-      jobDescription: jobData.jd,
-      jobTitle: jobData.title,
-      company: jobData.company,
-      request: requestText,
-    }));
-    setWorking(false);
-    if (result.success && result.text) setOutput(result.text);
-    else setError(result.error || 'The agent could not generate a response.');
+    try {
+      const field = formFields.find(field => field.id === draft?.fieldId);
+      const confirmed = field && confirmedNameAnswer(field, await loadApplicationName(resume.id));
+      if (confirmed) { setOutput(confirmed); return; }
+      const result = await createLLMChatCompletion(configId, buildApplicationAgentMessages({
+        action: requestedAction, resume: resume.content, jobDescription: jobData.jd,
+        jobTitle: jobData.title, company: jobData.company, request: requestText,
+      }));
+      if (result.success && result.text) setOutput(result.text);
+      else setError(result.error || 'The agent could not generate a response.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not prepare this answer.');
+    } finally { setWorking(false); }
   };
 
   const scanApplicationForm = async () => {
@@ -127,6 +133,9 @@ export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs,
     setScanningForm(true);
     try {
       const tab = await getActiveBrowserTab();
+      if (jobData.sourceUrl && !sameJobPage(jobData.sourceUrl, tab.url || '')) {
+        throw new Error('Read the current posting before drafting answers for its form.');
+      }
       const response = await sendBrowserTabMessage(tab.id, { type: 'GET_APPLICATION_FIELDS' });
       if (!response?.success) throw new Error(response?.error || 'Could not read application fields on this page.');
       const fields = (response.fields || []) as ApplicationFormField[];
@@ -158,14 +167,17 @@ export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs,
     setFormTabId(null);
     try {
       const tab = await getActiveBrowserTab();
-      let job = jobData;
+      if (jobData.sourceUrl && !sameJobPage(jobData.sourceUrl, tab.url || '')) {
+        throw new Error('This job belongs to another page. Read the current posting before filling its application.');
+      }
+      let job = { ...jobData, sourceUrl: jobData.sourceUrl || tab.url };
       if (smartRecruitersPostingApi(tab.url || 'https://invalid.example')) {
         const captured = await sendBrowserTabMessage(tab.id, { type: 'GET_JD' });
         if (!captured?.data?.jd) throw new Error(captured?.error || 'Read this job link before starting the assistant.');
-        job = captured.data;
+        job = { ...captured.data, sourceUrl: tab.url };
         onJobPrepared(job);
       }
-      const result = await runBrowserApplication({ tabId: tab.id, configId, resume: resume.content, job });
+      const result = await runBrowserApplication({ tabId: tab.id, configId, resume: resume.content, job, applicationName: await loadApplicationName(resume.id) });
       setStatus(result.status || '');
       setError(result.error || '');
     } catch (runError) {
@@ -182,6 +194,9 @@ export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs,
     try {
       const activeTab = await getActiveBrowserTab();
       if (activeTab.id !== formTabId) throw new Error('Switch back to the application tab before filling this answer.');
+      if (jobData.sourceUrl && !sameJobPage(jobData.sourceUrl, activeTab.url || '')) {
+        throw new Error('The application page changed. Read the current posting and scan its form again.');
+      }
       const response = await sendBrowserTabMessage(formTabId, {
         type: 'FILL_APPLICATION_FIELD',
         fieldId: draftFieldId,
@@ -209,32 +224,34 @@ export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs,
   const canAutomate = Boolean(selectedResumes[0] && jobData.jd && activeConfigs.some((config) => config.id === configId));
 
   return (
-    <section className="space-y-4 animate-in">
+    <section className="application-agent space-y-6" aria-labelledby="agent-heading">
       <div className="flex items-center gap-3">
-        <div className="p-2.5 bg-brand-100 dark:bg-brand-900/40 rounded-xl"><Bot className="w-5 h-5 text-brand-600 dark:text-brand-400" /></div>
+        <Bot aria-hidden="true" className="w-6 h-6 shrink-0 text-primary" />
         <div>
-          <h2 className="text-sm font-bold text-foreground">Application Agent</h2>
-          <p className="text-[10px] text-muted-foreground">Drafts grounded in your resume and this job</p>
+          <h2 id="agent-heading" className="text-lg font-semibold tracking-tight text-foreground">Application Agent</h2>
+          <p className="text-xs text-muted-foreground">Drafts grounded in your resume and this job</p>
         </div>
       </div>
 
-      <div className="glass-card p-4 space-y-3">
-        <label className="block text-[10px] font-bold uppercase tracking-wide text-muted-foreground" htmlFor="agent-job-url">Open a job link</label>
+      {selectedResumes[0] && <ApplicationNameForm key={selectedResumes[0].id} resumeId={selectedResumes[0].id} />}
+
+      <div className="agent-section space-y-3">
+        <label className="block text-sm font-semibold text-muted-foreground" htmlFor="agent-job-url">Open a job link</label>
         <div className="flex gap-2">
           <input id="agent-job-url" type="url" value={jobUrl} onChange={(event) => setJobUrl(event.target.value)} placeholder="https://company.com/jobs/…" className="min-w-0 flex-1 p-2.5 text-xs bg-muted/50 border border-border rounded-lg outline-none focus:border-brand-400 text-foreground" />
         <button onClick={openJobLink} disabled={!jobUrl.trim() || preparingJob || automationRunning} className="px-3 rounded-lg bg-muted hover:bg-brand-50 dark:hover:bg-brand-900/30 text-brand-700 dark:text-brand-300 disabled:opacity-40" title="Open and prepare job link" aria-label="Open and prepare job link">
             {preparingJob ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
           </button>
         </div>
-        <p className="text-[10px] text-muted-foreground">Opens the page and saves the job description for your application, including supported links that lead directly to a form.</p>
+        <p className="text-xs text-muted-foreground">Opens the page and saves the job description for your application, including supported links that lead directly to a form.</p>
         {jobData.jd && <details className="text-xs text-muted-foreground"><summary className="cursor-pointer font-semibold text-foreground">Prepared job: {jobData.title || 'Job description'}{jobData.company ? ` · ${jobData.company}` : ''}</summary><p className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap">{jobData.jd}</p></details>}
       </div>
 
-      <div className="glass-card p-4 space-y-4">
+      <div className="agent-section space-y-4">
         <div>
-          <label className="block text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1.5" htmlFor="agent-provider">AI provider and model</label>
+          <label className="block text-sm font-semibold text-muted-foreground mb-1.5" htmlFor="agent-provider">AI provider and model</label>
           {activeConfigs.length > 0 ? (
-            <select id="agent-provider" value={configId} onChange={(event) => setConfigId(event.target.value)} className="w-full p-2.5 text-xs bg-muted/50 border border-border rounded-lg outline-none focus:border-brand-400 text-foreground">
+            <select id="agent-provider" value={configId} onChange={(event) => { setConfigId(event.target.value); onSelectedLLMConfigChange(event.target.value); }} className="w-full p-2.5 text-xs bg-muted/50 border border-border rounded-lg outline-none focus:border-brand-400 text-foreground">
               {activeConfigs.map((config) => <option key={config.id} value={config.id}>{config.name?.trim() || `${config.provider}/${config.model}`} · {config.provider} · {config.model}</option>)}
             </select>
           ) : (
@@ -242,11 +259,11 @@ export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs,
               Add an AI provider in Settings
             </button>
           )}
-          <p className="text-[10px] text-muted-foreground mt-1.5">Choose any active saved provider. OpenRouter can supply models from multiple AI labs.</p>
+          <p className="text-xs text-muted-foreground mt-1.5">Choose any active saved provider. OpenRouter can supply models from multiple AI labs.</p>
         </div>
 
         <div>
-          <label className="block text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1.5" htmlFor="agent-action">What should the agent do?</label>
+          <label className="block text-sm font-semibold text-muted-foreground mb-1.5" htmlFor="agent-action">What should the agent do?</label>
           <select id="agent-action" value={action} onChange={(event) => setAction(event.target.value as ApplicationAgentAction)} className="w-full p-2.5 text-xs bg-muted/50 border border-border rounded-lg outline-none focus:border-brand-400 text-foreground">
             {ACTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
           </select>
@@ -254,24 +271,24 @@ export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs,
 
         {needsRequest && (
           <div>
-            <label className="block text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1.5" htmlFor="agent-request">{action === 'custom' ? 'Your request' : 'Application question'}</label>
+            <label className="block text-sm font-semibold text-muted-foreground mb-1.5" htmlFor="agent-request">{action === 'custom' ? 'Your request' : 'Application question'}</label>
             <textarea id="agent-request" value={request} onChange={(event) => setRequest(event.target.value)} maxLength={4000} rows={4} placeholder={action === 'custom' ? 'Ask for a tailored response, review, or other job-application help…' : 'Paste the question from the application form…'} className="w-full p-3 text-xs bg-muted/50 border border-border rounded-lg outline-none focus:border-brand-400 resize-y text-foreground" />
           </div>
         )}
 
-        <button onClick={() => void generate()} disabled={!ready || working} className="btn-primary w-full text-xs">
+        <button onClick={() => void generate()} disabled={!ready || working} aria-busy={working} className="btn-primary w-full text-sm">
           {working ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           {working ? 'Generating draft…' : 'Generate draft'}
         </button>
-        <p className="text-[10px] text-muted-foreground">Automation sends the selected resume, job posting, and supported form questions to your chosen provider. Review every answer before submitting.</p>
+        <p className="text-xs text-muted-foreground">Automation sends the selected resume, job posting, and supported form questions to your chosen provider. Review every answer before submitting.</p>
       </div>
 
-      <div className="glass-card p-4 space-y-3">
+      <div className="agent-section space-y-3">
         <div>
-          <h3 className="text-xs font-bold text-foreground">Application form</h3>
-          <p className="text-[10px] text-muted-foreground mt-1">Run a supervised pass from the job post through its application form.</p>
+          <h3 className="text-sm font-semibold text-foreground">Application form</h3>
+          <p className="text-xs text-muted-foreground mt-1">Run a supervised pass from the job post through its application form.</p>
         </div>
-        <button onClick={() => void runApplicationAssistant()} disabled={!canAutomate || scanningForm || automationRunning || working || preparingJob} className="btn-primary w-full text-xs disabled:opacity-50">
+        <button onClick={() => void runApplicationAssistant()} disabled={!canAutomate || scanningForm || automationRunning || working || preparingJob} aria-busy={automationRunning} className="btn-secondary w-full text-sm">
           {automationRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           {automationRunning ? 'Running application assistant…' : 'Run application assistant'}
         </button>
@@ -279,16 +296,16 @@ export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs,
           {scanningForm ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
           {scanningForm ? 'Scanning page…' : 'Preview supported fields'}
         </button>
-        <p className="text-[10px] text-muted-foreground">It opens a clear Apply action, scrolls through supported text and select fields, fills answers grounded in your resume, and advances through clear Next or Continue steps in the same form. It pauses for missing required answers and leaves final review, submission, consent, and file uploads to you.</p>
+        <p className="text-xs text-muted-foreground">It opens a clear Apply action, scrolls through supported text and select fields, fills answers grounded in your resume, and advances through clear Next or Continue steps in the same form. It pauses for missing required answers and leaves final review, submission, consent, and file uploads to you.</p>
         {formFields.length > 0 && (
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {formFields.map((field) => (
               <div key={field.id} className="flex items-center gap-2 p-2.5 rounded-lg border border-border/70">
-                <span className="min-w-0 flex-1 text-[11px] text-foreground line-clamp-2">{field.label}</span>
+                <span className="min-w-0 flex-1 text-xs text-foreground line-clamp-2">{field.label}</span>
                 {field.value.trim() ? (
-                  <span className="shrink-0 text-[9px] text-muted-foreground">Already filled</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">Already filled</span>
                 ) : (
-                  <button onClick={() => { setAction('application-answer'); setRequest(field.label); void generate({ action: 'application-answer', request: field.label, fieldId: field.id }); }} disabled={!selectedResumes.length || !jobData.jd || !configId || working || automationRunning} className="shrink-0 px-2 py-1.5 text-[10px] font-semibold text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-900/30 rounded-md disabled:opacity-40">
+                  <button onClick={() => { setAction('application-answer'); setRequest(field.label); void generate({ action: 'application-answer', request: field.label, fieldId: field.id }); }} disabled={!selectedResumes.length || !jobData.jd || !configId || working || automationRunning} className="shrink-0 px-2 py-1.5 text-xs font-semibold text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-900/30 rounded-md disabled:opacity-40">
                     Draft answer
                   </button>
                 )}
@@ -301,19 +318,19 @@ export default function ApplicationAgent({ jobData, selectedResumes, llmConfigs,
             Fill reviewed answer
           </button>
         )}
-        <p className="text-[10px] text-muted-foreground">The agent can use resume-stated name, contact details, location, links, and experience. Legal, work-authorization, demographic, medical, financial, availability, verification, background-check, existing-value, file, and consent fields need your review.</p>
+        <p className="text-xs text-muted-foreground">The agent can use resume-stated name, contact details, location, links, and experience. Legal, work-authorization, demographic, medical, financial, availability, verification, background-check, existing-value, file, and consent fields need your review.</p>
       </div>
 
-      {!selectedResumes.length && <p className="text-xs text-amber-700 dark:text-amber-300">Select a resume in the Resumes tab to give the agent candidate context.</p>}
-      {!jobData.jd && <p className="text-xs text-amber-700 dark:text-amber-300">Open a supported job page or use Match to enter a job description.</p>}
-      {error && <p role="alert" className="text-xs text-rose-600 dark:text-rose-400">{error}</p>}
-      {status && <p role="status" className="text-xs text-emerald-700 dark:text-emerald-400">{status}</p>}
+      {!selectedResumes.length && <p className="rounded-lg border border-border bg-muted p-3 text-xs text-foreground">Select a resume in the Resumes tab to give the agent candidate context.</p>}
+      {!jobData.jd && <p className="rounded-lg border border-border bg-muted p-3 text-xs text-foreground">Open a supported job page or use Match to enter a job description.</p>}
+      {error && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}
+      {status && <p role="status" className="rounded-lg border border-primary/30 bg-accent p-3 text-sm text-accent-foreground">{status}</p>}
 
       {output && (
         <div className="glass-card p-4 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold text-foreground">Draft for your review</h3>
-            <button onClick={copyOutput} className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-semibold text-brand-700 dark:text-brand-300 hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg">
+            <button onClick={copyOutput} className="flex items-center gap-1.5 px-2 py-1 text-xs font-semibold text-brand-700 dark:text-brand-300 hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg">
               <Clipboard className="w-3.5 h-3.5" /> Copy
             </button>
           </div>

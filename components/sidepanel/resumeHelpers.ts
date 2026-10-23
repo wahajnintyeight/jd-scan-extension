@@ -1,8 +1,6 @@
-export const ACCEPTED_TYPES = '.pdf,.doc,.docx,.txt';
+export const ACCEPTED_TYPES = '.pdf,.txt';
 export const ACCEPTED_MIMES = [
   'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'text/plain',
 ];
 

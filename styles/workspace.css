@@ -1,0 +1,53 @@
+@layer components {
+  .workspace-content {
+    width: 100%;
+    max-width: var(--jd-settings-width);
+    margin-inline: auto;
+  }
+
+  .application-agent .agent-section + .agent-section {
+    border-top: 1px solid oklch(var(--jd-border));
+    padding-top: 24px;
+  }
+
+  .application-agent input,
+  .application-agent select,
+  .application-agent button,
+  .resume-library button,
+  .workspace-content input:not([type="checkbox"]) {
+    min-height: var(--jd-control-height);
+  }
+
+  .application-agent input,
+  .application-agent select,
+  .application-agent textarea {
+    font-size: var(--jd-text-body);
+    background: oklch(var(--jd-card));
+    caret-color: oklch(var(--jd-primary));
+  }
+
+  .application-agent p,
+  .resume-library p {
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+
+  .application-agent summary {
+    padding-block: 8px;
+    overflow-wrap: anywhere;
+  }
+
+  .resume-library input[type="checkbox"] {
+    accent-color: oklch(var(--jd-primary));
+  }
+
+  .workspace-content input::placeholder,
+  .workspace-content textarea::placeholder {
+    color: oklch(var(--jd-muted-foreground));
+    opacity: 1;
+  }
+
+  .dashboard-tabs button[aria-current="page"] {
+    box-shadow: none;
+  }
+}

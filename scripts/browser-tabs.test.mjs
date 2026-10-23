@@ -53,6 +53,19 @@ test('inactive content-script tabs cannot use the sender-tab shortcut', async ()
   assert.equal((await request({ type: 'JD_SCAN_SEND_TAB_MESSAGE', tabId: 7, message: { type: 'GET_APPLICATION_FIELDS' } })).success, false);
 });
 
+test('content actions check the source window while preserving the active-tab guard', async () => {
+  let activeId = 7;
+  const request = await worker({ query: async query => {
+    assert.deepEqual(JSON.parse(JSON.stringify(query)), { active: true, windowId: 42 });
+    return [{ id: activeId, url: 'https://jobs.ashbyhq.com/linear/posting' }];
+  }, sendMessage: async () => ({ success: true }) },
+  { id: 'jd-scan', tab: { id: 7, windowId: 42, active: false, url: 'https://jobs.ashbyhq.com/linear/posting' } });
+  assert.equal((await request({ type: 'JD_SCAN_GET_ACTIVE_TAB' })).tab.id, 7);
+  assert.equal((await request({ type: 'JD_SCAN_SEND_TAB_MESSAGE', tabId: 7, message: { type: 'GET_APPLICATION_FIELDS' } })).success, true);
+  activeId = 8;
+  assert.equal((await request({ type: 'JD_SCAN_SEND_TAB_MESSAGE', tabId: 7, message: { type: 'FILL_APPLICATION_FIELDS' } })).success, false);
+});
+
 test('worker rejects missing tab API without throwing a query TypeError', async () => {
   const request = await worker({});
   const response = await request({ type: 'JD_SCAN_GET_ACTIVE_TAB' });
